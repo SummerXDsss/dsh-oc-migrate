@@ -9,8 +9,10 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 const temp = await mkdtemp(path.join(os.tmpdir(), 'dsh-package-smoke-'));
 const run = (file, args, cwd = root) => execFileSync(file, args, { cwd, encoding: 'utf8', timeout: 120000, maxBuffer: 1000000 });
 try {
-  const [packed] = JSON.parse(run('npm', ['pack', '--json', '--pack-destination', temp]));
-  run('npm', ['install', '--prefix', temp, path.join(temp, packed.filename), '--ignore-scripts', '--no-audit', '--no-fund']);
+  if (!process.env.npm_execpath) throw new Error('请通过 npm run test:package 执行');
+  const npm = args => run(process.execPath, [process.env.npm_execpath, ...args]);
+  const [packed] = JSON.parse(npm(['pack', '--json', '--pack-destination', temp]));
+  npm(['install', '--prefix', temp, path.join(temp, packed.filename), '--ignore-scripts', '--no-audit', '--no-fund']);
   assert.equal(run(process.execPath, ['--input-type=module', '-e', "const p=await import('dsh-oc-migrate'); if(p.name!=='dsh-oc-migrate'||typeof p.apply!=='function'||!p.Config)process.exit(1);console.log('plugin-entry: PASS')"], temp).trim(), 'plugin-entry: PASS');
   const cli = path.join(temp, 'node_modules', 'dsh-oc-migrate', 'bin/dsh-oc-migrate.mjs');
   assert.match(run(process.execPath, [cli, '--help']), /DeepSeek Harness/);

@@ -1,14 +1,25 @@
 // Offline DSH workspace v2 registration. Native GUI owns this file while running.
 // Keep source logs immutable; merge only the migrated session's membership on rollback.
-import {readFile,writeFile,rename,mkdir,open,unlink,realpath} from 'node:fs/promises';
+import {readFile,writeFile,mkdir,open,unlink,realpath} from 'node:fs/promises';
 import {execFile} from 'node:child_process';import {promisify} from 'node:util';
 import {randomUUID} from 'node:crypto';
+import {atomicWrite} from '../../core/src/atomic-file.mjs';
 import path from 'node:path';import {digest} from '../../core/src/protocol.mjs';import {atomicJSON} from './store.mjs';
 const exec=promisify(execFile);
-async function atomicBytes(file,data){const temp=file+'.'+randomUUID()+'.tmp';await writeFile(temp,data,{flag:'wx',mode:0o600});try{await rename(temp,file);}catch(e){await unlink(temp).catch(()=>{});throw e;}}
-export async function assertDshOffline(){
- const output=process.platform==='win32' ? (await exec('tasklist',['/FO','CSV','/NH'],{windowsHide:true,timeout:10000})).stdout : (await exec('ps',['-axo','comm='],{timeout:10000})).stdout;
- if(output.split('\n').some(line=>/(?:^|[\\/" ])(?:DSH NEXT|DeepSeek Harness|deepseek-harness|dsh)(?:\.exe)?(?:"|$)/i.test(line.trim())))throw Error('请先退出 DeepSeek Harness，再迁移或回滚项目名称；重新打开后会显示项目与对话');
+const atomicBytes = atomicWrite;
+export function hasDshProcess(output, platform = process.platform) {
+ const names=new Set(['dsh','dsh next','deepseek harness','deepseek-harness','deepseek-harnes','deepseekharness','dsh-next','dsh-desktop','dsh next helper']);
+ return output.split(/\r?\n/).some(line=>{
+  const value=platform==='win32' ? line.match(/^"((?:[^"]|"")*)"/)?.[1]?.replace(/""/g,'"') : line.trim();
+  if(!value)return false;
+  const name=value.split(/[\\/]/).at(-1).replace(/\.exe$/i,'').toLowerCase();return names.has(name);
+ });
+}
+export async function assertDshOffline({platform=process.platform,execute=exec}={}){
+ let output;
+ try { output=(await execute(platform==='win32'?'tasklist':'ps',platform==='win32'?['/FO','CSV','/NH']:['-A','-o','comm='],{windowsHide:true,timeout:10000})).stdout; }
+ catch(error){throw new Error('系统进程检查失败，尚未写入 DSH 项目；Linux 请确认已安装 procps，Windows 请确认 tasklist 可运行。',{cause:error});}
+ if(hasDshProcess(output,platform))throw Error('请先退出 DeepSeek Harness，再迁移或回滚项目名称；重新打开后会显示项目与对话');
 }
 async function bytes(file){try{return await readFile(file);}catch(e){if(e.code==='ENOENT')return null;throw e;}}
 function decode(data){

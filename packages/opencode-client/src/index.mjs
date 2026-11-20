@@ -1,6 +1,7 @@
 import { execFile, spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { promisify } from 'node:util';
+import { resolveCliBinary } from './discovery.mjs';
 import { canonical, digest } from '../../core/src/protocol.mjs';
 
 const execute = promisify(execFile);
@@ -75,7 +76,7 @@ export async function listSessionPages(fetchPage) {
 }
 
 export async function createCliClient(config) {
-  const binary = config.binary ?? 'opencode';
+  const binary = await resolveCliBinary(config.binary ?? 'opencode', { env: { ...process.env, ...config.env }, cwd: config.directory });
   const env = { ...process.env, ...config.env };
   if (config.dataHome) env.XDG_DATA_HOME = config.dataHome;
   const run = async args => {

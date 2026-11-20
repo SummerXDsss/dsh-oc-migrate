@@ -2,13 +2,15 @@ import { mkdir, readFile, writeFile, stat, chmod } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import os from 'node:os';
+import { dshHome } from '../../core/src/platform-paths.mjs';
 import readline from 'node:readline';
 import { pathToFileURL } from 'node:url';
 import { MigrationStore, atomicJSON } from '../../middleware/src/store.mjs';
 import { ReverseStore } from '../../middleware/src/reverse.mjs';
 import { createReceiver } from '../../middleware/src/server.mjs';
 import { createCliClient, createHttpClient } from '../../opencode-client/src/index.mjs';
-import { QuickMigration, binaryCandidates } from './quick.mjs';
+import { QuickMigration } from './quick.mjs';
+import { discoverBinaries } from '../../opencode-client/src/discovery.mjs';
 import { ConversationCatalog } from './catalog.mjs';
 
 const MAX_FILE = 64 * 1024 * 1024;
@@ -40,7 +42,7 @@ export class DesktopService {
   }
   async detect() {
     const home = os.homedir();
-    const names = binaryCandidates(home);
+    const names = await discoverBinaries(home);
     const candidates = [];
     for (const binary of names) {
       try {
@@ -48,7 +50,7 @@ export class DesktopService {
         candidates.push({ binary, version: client.version, generation: client.generation });
       } catch { /* Other candidates remain discoverable when one binary is absent. */ }
     }
-    return { candidates, dshProfile: path.join(home, '.dsh/profiles/desktop') };
+    return { candidates, dshProfile: path.join(dshHome(home), 'profiles', 'desktop') };
   }
   normalize(input) {
     if (!input || typeof input.directory !== 'string' || !path.isAbsolute(input.directory)) throw new Error('请选择 OpenCode 目标项目的绝对路径');

@@ -19,7 +19,7 @@ async function setup(t) {
 }
 for (const generation of ['v1', 'v2']) test(`${generation} → DSH 原生 v4：正文、思考、工具配对及项目路径`, () => {
   const transcript = makeTranscript(generation), c = convertOpenCode(transcript);
-  assert.equal(c.session.header.cwd, '/tmp/迁移项目'); assert.equal(c.session.header.version, 4);
+  assert.equal(c.session.header.cwd, path.normalize('/tmp/迁移项目')); assert.equal(c.session.header.version, 4);
   assert.ok(c.bytes.includes(Buffer.from('原始文件内容')));
   assert.ok(c.bytes.includes(Buffer.from('先核对已有文件')));
   assert.equal(c.session.events.filter(e => e.type === 'tool/call').length, 1);

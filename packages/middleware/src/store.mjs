@@ -3,13 +3,12 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { contentDigest, digest, validateBundle } from '../../core/src/protocol.mjs';
 import { convertBundle, CONVERTER_REVISION } from '../../core/src/convert.mjs';
+import { atomicWrite } from '../../core/src/atomic-file.mjs';
 import { verifyTranscript } from '../../opencode-client/src/index.mjs';
 import { claimProjectName, releaseProjectName } from './project-names.mjs';
 
 export async function atomicJSON(file, value) {
-  const temp = `${file}.${randomUUID()}.tmp`;
-  await writeFile(temp, JSON.stringify(value, null, 2) + '\n', { mode: 0o600, flag: 'wx' });
-  await rename(temp, file);
+  await atomicWrite(file, JSON.stringify(value, null, 2) + '\n');
 }
 export class MigrationStore {
   constructor(config) { this.config = config; this.root = path.resolve(config.state); }

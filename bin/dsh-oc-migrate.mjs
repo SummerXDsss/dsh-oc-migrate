@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { dshHome } from '../packages/core/src/platform-paths.mjs';
 import { parseArgs } from 'node:util';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
@@ -52,7 +53,7 @@ async function main() {
     if (report.direction === 'oc-to-dsh') { console.log(JSON.stringify(await new ReverseStore({ state })[command === 'retry' ? 'import' : 'rollback'](input), null, 2)); return; }
   }
   if (command === 'to-dsh') {
-    const store = new ReverseStore({ state, dshRoot: path.resolve(args['dsh-root'] ?? path.join(os.homedir(), '.dsh/sessions')) });
+    const store = new ReverseStore({ state, dshRoot: path.resolve(args['dsh-root'] ?? path.join(dshHome(os.homedir()), 'sessions')) });
     if (input) {
       const report = await store.receive(JSON.parse(await readFile(input, 'utf8')), { importNow: true });
       console.log(JSON.stringify(report, null, 2)); if (report.status !== 'imported') process.exitCode = 1; return;

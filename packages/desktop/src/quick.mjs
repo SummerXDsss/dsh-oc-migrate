@@ -1,4 +1,5 @@
 import { mkdir, readFile, writeFile, stat } from 'node:fs/promises';
+import { dshHome } from '../../core/src/platform-paths.mjs';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { findLocalSessions, captureLocalSession } from '../../plugin/src/local-reader.mjs';
@@ -7,13 +8,13 @@ import { ReverseStore, detectDshEncoding } from '../../middleware/src/reverse.mj
 import { atomicJSON } from '../../middleware/src/store.mjs';
 import { readDshWorkspaces, workspaceFor, canonicalDirectory } from './source-labels.mjs';
 
-import { binaryCandidates } from '../../opencode-client/src/discovery.mjs';
+import { binaryCandidates, discoverBinaries } from '../../opencode-client/src/discovery.mjs';
 export { binaryCandidates };
 
 export class QuickMigration {
   constructor({ root, home, makeClient, store, emit, candidates }) {
     Object.assign(this, { root, home, makeClient, store, emit });
-    this.candidates = candidates ?? binaryCandidates(home);
+    this.candidates = candidates;
     this.current = null; this.active = false; this.cancelled = false;
   }
   async init() {
@@ -27,13 +28,13 @@ export class QuickMigration {
   }
   async discover(input = {}) {
     if (input.direction === 'oc-to-dsh') return this.discoverReverse(input);
-    const sourceRoot = input.sourceRoot || path.join(this.home, '.dsh/sessions');
+    const sourceRoot = input.sourceRoot || path.join(dshHome(this.home), 'sessions');
     const scan = await findLocalSessions(sourceRoot);
-    const binaries = input.binary ? [input.binary] : this.candidates;
+    const binaries = input.binary ? [input.binary] : (this.candidates ?? await discoverBinaries(this.home));
     // Prefer the installed GUI's own CLI over another generation in PATH.
     const found = await Promise.all(binaries.map(async binary => {
       try {
-        const client = await this.makeClient({ binary, directory: this.home, dataHome: input.dataHome || '', timeout: 7000 });
+        const client = await this.makeClient({ binary, directory: this.home, dataHome: input.dataHome || '', timeout: process.platform === 'win32' ? 30000 : 7000 });
         return { binary, version: client.version, generation: client.generation };
       } catch { return null; }
     }));
@@ -42,11 +43,11 @@ export class QuickMigration {
       directory: input.directory || path.join(this.home, 'OpenCode/DSH 历史'), preserveProjects: !input.directory };
   }
   async discoverReverse(input) {
-    const dshRoot = input.dshRoot || path.join(this.home, '.dsh/sessions');
+    const dshRoot = input.dshRoot || path.join(dshHome(this.home), 'sessions');
     if (!path.isAbsolute(dshRoot)) throw new Error('DSH sessions 需要绝对路径');
     let target = null;
-    for (const binary of input.binary ? [input.binary] : this.candidates) {
-      try { const client = await this.makeClient({ binary, directory: this.home, dataHome: input.dataHome || '', timeout: 7000 });
+    for (const binary of input.binary ? [input.binary] : (this.candidates ?? await discoverBinaries(this.home))) {
+      try { const client = await this.makeClient({ binary, directory: this.home, dataHome: input.dataHome || '', timeout: process.platform === 'win32' ? 30000 : 7000 });
         target = { binary, version: client.version, generation: client.generation }; break;
       } catch { /* Next installed binary. */ }
     }
