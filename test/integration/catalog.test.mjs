@@ -12,7 +12,7 @@ import { fixture } from '../fixture.mjs';
 for (const [generation, binary] of [['v1', process.env.OPENCODE_V1_BIN], ['v2', process.env.OPENCODE_V2_BIN]]) {
   test(`真实 ${generation} 管理器：扫描/项目分组/预览/只选一条双向迁移及回滚`, { skip: !binary, timeout: 300000 }, async t => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'dsh-catalog-native-')); t.after(() => rm(root, { recursive: true, force: true }));
-    const env = { HOME: root, XDG_DATA_HOME: path.join(root,'data'), XDG_STATE_HOME: path.join(root,'state'), XDG_CONFIG_HOME: path.join(root,'config'), XDG_CACHE_HOME: path.join(root,'cache'), OPENCODE_DB: path.join(root,'opencode.db'), OPENCODE_DISABLE_AUTOUPDATE:'1', OPENCODE_DISABLE_MODELS_FETCH:'1', OPENCODE_CONFIG_CONTENT:'{}', OPENCODE_DISABLE_PROJECT_CONFIG:'1' };
+    const env = { HOME: root, USERPROFILE: root, APPDATA: path.join(root,'roaming'), LOCALAPPDATA: path.join(root,'local'), XDG_DATA_HOME: path.join(root,'data'), XDG_STATE_HOME: path.join(root,'state'), XDG_CONFIG_HOME: path.join(root,'config'), XDG_CACHE_HOME: path.join(root,'cache'), OPENCODE_DB: path.join(root,'opencode.db'), OPENCODE_DISABLE_AUTOUPDATE:'1', OPENCODE_DISABLE_MODELS_FETCH:'1', OPENCODE_CONFIG_CONTENT:'{}', OPENCODE_DISABLE_PROJECT_CONFIG:'1' };
     const makeClient = config => createCliClient({ ...config, binary, env });
     const app = await new DesktopService({ root: path.join(root,'app'), home: root, candidates:[binary], makeClient }).init();
     const sources = [];

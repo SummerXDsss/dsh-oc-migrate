@@ -2,6 +2,7 @@ import {test} from 'node:test';import assert from 'node:assert/strict';
 import {mkdtemp,mkdir,writeFile,readFile,readdir,rm} from 'node:fs/promises';import path from 'node:path';import os from 'node:os';
 import{binaryCandidates,desktopCliRoots,discoverBinaries,resolveCliBinary}from'../packages/opencode-client/src/discovery.mjs';
 import{dshHome}from'../packages/core/src/platform-paths.mjs';import{replaceFile,atomicWrite}from'../packages/core/src/atomic-file.mjs';
+import {nativeTarget} from '../scripts/native-regression.mjs';
 import{hasDshProcess,assertDshOffline}from'../packages/middleware/src/dsh-workspaces.mjs';
 const missing=()=>{throw Object.assign(Error('missing'),{code:'ENOENT'});};
 test('Windows 发现：2.x resources、旧 GUI、npm 原生包、Scoop 与中文/空格路径',()=>{
@@ -59,4 +60,8 @@ test('离线检查：Windows CSV、Linux/macOS 可执行名，普通 node 与编
  let invocation;await assertDshOffline({platform:'linux',execute:async(...args)=>{invocation=args;return{stdout:'node\n'};}});assert.deepEqual(invocation.slice(0,2),['ps',['-A','-o','comm=']]);
  await assert.rejects(assertDshOffline({platform:'win32',execute:async()=>({stdout:'"dsh.exe","12"'})}),/先退出/);
  await assert.rejects(assertDshOffline({platform:'linux',execute:async()=>missing()}),/进程检查失败/);
+});
+
+test('原生 CI 平台映射不依赖 bash、WSL 或 .cmd shim',()=>{
+ assert.equal(nativeTarget('win32','x64'),'x86_64-pc-windows-msvc');assert.equal(nativeTarget('linux','x64'),'x86_64-unknown-linux-gnu');assert.throws(()=>nativeTarget('linux','mips'));
 });

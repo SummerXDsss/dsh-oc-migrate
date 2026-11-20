@@ -30,6 +30,7 @@
     "test": "node --test test/*.test.mjs",
     "check": "node scripts/check.mjs",
     "test:integration": "node --test test/integration/*.test.mjs",
+    "test:native:ci": "node scripts/native-regression.mjs",
     "test:package": "node scripts/package-smoke.mjs",
     "start": "node bin/dsh-oc-migrate.mjs serve",
     "desktop:prepare": "node scripts/desktop-prepare.mjs",

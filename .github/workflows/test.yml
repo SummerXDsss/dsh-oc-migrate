@@ -4,9 +4,11 @@ permissions:
   contents: read
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
+        os: [ubuntu-22.04, windows-2022]
         node: ['22', '24']
     steps:
       - uses: actions/checkout@v7.0.1
@@ -20,7 +22,11 @@ jobs:
       - run: npm test
       - run: npm run test:package
   native-regression:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-2022]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: actions/setup-node@v7.1.0
@@ -32,17 +38,8 @@ jobs:
         with:
           bun-version: '1.3.14'
       - run: npm run desktop:prepare
-      - name: Install pinned OpenCode binaries in isolated folders
-        run: |
-          npm install --prefix "$RUNNER_TEMP/oc-v1" opencode-ai@1.18.31 --no-audit --no-fund
-          npm install --prefix "$RUNNER_TEMP/oc-v2" @opencode/cli@2.3.2 --no-audit --no-fund
-      - name: Bidirectional native CLI, compiled desktop, server, and rollback regression
-        run: |
-          DSH_NATIVE_APP_ROOT="$PWD" \
-          DSH_OC_TEST_SIDECAR="$PWD/src-tauri/binaries/migrate-backend-x86_64-unknown-linux-gnu" \
-          OPENCODE_V1_BIN="$RUNNER_TEMP/oc-v1/node_modules/.bin/opencode" \
-          OPENCODE_V2_BIN="$RUNNER_TEMP/oc-v2/node_modules/.bin/opencode" \
-          npm run test:integration
+      - name: Native 1.x / 2.x bidirectional regression with Chinese and space paths
+        run: npm run test:native:ci
   desktop-check:
     runs-on: macos-15
     steps:

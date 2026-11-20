@@ -2,7 +2,7 @@ import { readdir, mkdir, copyFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 export async function collectRelease(input, output) {
-  const files = [], counts = { '.dmg': 0, '.exe': 0, '.deb': 0, '.AppImage': 0 };
+  const files = [], counts = { '.dmg': 0, '.exe': 0, '.deb': 0, '.AppImage': 0, '.rpm': 0 };
   // GitHub rewrites spaces in uploaded asset names. Normalize before checksums
   // so SHA256SUMS refers to the actual downloadable filenames.
   const assetName = file => path.basename(file).replace(/[^A-Za-z0-9._-]/g, '.');
@@ -20,8 +20,8 @@ export async function collectRelease(input, output) {
     if (names.has(name)) throw new Error(`Release asset name collision: ${name}`);
     names.add(name); counts[path.extname(file)]++;
   }
-  if (counts['.dmg'] !== 2 || counts['.exe'] !== 1 || counts['.deb'] !== 1 || counts['.AppImage'] !== 1) {
-    throw new Error(`Expected 5 installers across 4 platforms: ${JSON.stringify(counts)}`);
+  if (counts['.dmg'] !== 2 || counts['.exe'] !== 1 || counts['.deb'] !== 1 || counts['.AppImage'] !== 1 || counts['.rpm'] !== 1) {
+    throw new Error(`Expected 6 installers across 4 platforms: ${JSON.stringify(counts)}`);
   }
   await mkdir(output, { recursive: true });
   for (const file of files) await copyFile(file, path.join(output, assetName(file)));

@@ -14,7 +14,7 @@ test('真实 OpenCode 2.x HTTP：导入到 GUI 后端，CLI 连接同一服务�
   const root = await mkdtemp(path.join(os.tmpdir(), 'dsh-server-v2-'));
   const directory = path.join(root, 'project'); await mkdir(directory);
   const binary = process.env.OPENCODE_V2_BIN, password = 'isolated-integration-test-password';
-  const env = { ...process.env, HOME: root, XDG_DATA_HOME: root + '/data', XDG_STATE_HOME: root + '/state', XDG_CONFIG_HOME: root + '/config', XDG_CACHE_HOME: root + '/cache', OPENCODE_DB: root + '/opencode.db', OPENCODE_DISABLE_MODELS_FETCH: '1', OPENCODE_DISABLE_AUTOUPDATE: '1', OPENCODE_CONFIG_CONTENT: '{}', OPENCODE_DISABLE_PROJECT_CONFIG: '1', OPENCODE_SERVER_PASSWORD: password };
+  const env = { ...process.env, HOME: root, USERPROFILE: root, APPDATA: path.join(root,'roaming'), LOCALAPPDATA: path.join(root,'local'), XDG_DATA_HOME: root + '/data', XDG_STATE_HOME: root + '/state', XDG_CONFIG_HOME: root + '/config', XDG_CACHE_HOME: root + '/cache', OPENCODE_DB: root + '/opencode.db', OPENCODE_DISABLE_MODELS_FETCH: '1', OPENCODE_DISABLE_AUTOUPDATE: '1', OPENCODE_CONFIG_CONTENT: '{}', OPENCODE_DISABLE_PROJECT_CONFIG: '1', OPENCODE_SERVER_PASSWORD: password };
   const child = spawn(binary, ['serve', '--hostname', '127.0.0.1', '--port', '0'], { env, cwd: directory, stdio: ['ignore', 'pipe', 'pipe'] });
   let output = '';
   t.after(async () => {
