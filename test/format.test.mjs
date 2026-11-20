@@ -92,3 +92,39 @@ test('更改了工具参数、附件或终止原因时，不套用旧 DSH 原件
     assert.equal(JSON.parse(session.events.find(e=>e.type==='assistant/message').data.message.content.find(p=>p.type==='tool-call').arguments).path,'changed.txt');
   }
 });
+
+for(const from of ['v1','v2'])test(`${from} 跨代结构转换保留正文、文件数据、工具 ID、usage、时间和 length`,async()=>{
+  const {formatTranscript,IMAGE}=await import('./format-fixture.mjs');
+  const original=formatTranscript(from,'/tmp/format-project'),session=convertOpenCode(original).session,to=from==='v1'?'v2':'v1';
+  const out=convertBundle(bundleFor(session),{directory:'/tmp/format-project',generation:to,stateSnapshots:false})[0].transcript;
+  const user=out.messages[0],assistant=out.messages[1];
+  assert.deepEqual((assistant.info??assistant).tokens,(original.messages[1].info??original.messages[1]).tokens);
+  assert.deepEqual((assistant.info??assistant).time,(original.messages[1].info??original.messages[1]).time);
+  assert.equal((assistant.info??assistant).finish,'length');
+  if(to==='v1'){assert.equal(user.parts.find(p=>p.type==='file').url,`data:image/png;base64,${IMAGE}`);assert.match(user.parts[0].text,/^  原始空格/);}
+  else{assert.equal(user.files[0].data,IMAGE);assert.match(user.text,/^  原始空格/);}
+  const tools=(assistant.parts??assistant.content).filter(p=>p.type==='tool');
+  assert.deepEqual(tools.map(p=>p.callID??p.id),['call-1','call-error']);
+  assert.equal(tools[0].state.status,'completed');assert.equal(tools[1].state.status,'error');
+});
+
+test('DSH 用户多文字块不凭空插入换行，2.x 工具结果保留多段而非揉成一段',()=>{
+  const source=fixture();source.sessions[0].events[3].data.content=[{type:'text',text:'前半'},{type:'text',text:'后半\n'}];
+  source.sessions[0].events[6].data.message.content=[{type:'text',text:'一'},{type:'text',text:''},{type:'text',text:'三\n'}];
+  for(const generation of ['v1','v2']){
+    const out=convertBundle(source,{directory:'/tmp/format-project',generation})[0];
+    if(generation==='v1'){assert.deepEqual(out.transcript.messages[1].parts.map(p=>p.text),['前半','后半\n']);assert.match(out.warnings.join(),/多段结果合并/);}
+    else{assert.equal(out.transcript.messages[1].text,'前半后半\n');assert.deepEqual(out.transcript.messages[2].content.find(p=>p.type==='tool').state.content,source.sessions[0].events[6].data.message.content);}
+  }
+});
+
+test('有回程结构的未完成原生工具也不会被恢复成 running/pending',async()=>{
+  const {formatTranscript}=await import('./format-fixture.mjs');
+  for(const generation of ['v1','v2']){
+    const source=formatTranscript(generation,'/tmp/format-project'),assistant=source.messages[1];
+    const tool=(assistant.parts??assistant.content).find(p=>p.type==='tool');tool.state={status:'running',input:{command:'历史，不执行'},metadata:{}};
+    const session=convertOpenCode(source).session;
+    const out=convertBundle(bundleFor(session),{directory:'/tmp/format-project',generation,stateSnapshots:false})[0];
+    assert.ok(out.transcript.messages.flatMap(m=>m.parts??m.content??[]).filter(p=>p.type==='tool').every(p=>['completed','error'].includes(p.state.status)));
+  }
+});

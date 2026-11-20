@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { dshLabel } from './labels.mjs';
 import { attachDshEnvelope, nativeBridge } from './message-format.mjs';
+import { transcodeNativeRecord } from './native-format.mjs';
 import { digest, validateBundle, SURFACE_TYPES } from './protocol.mjs';
 
 // Version both the converted session IDs and middleware jobs when projection changes.
@@ -57,11 +58,12 @@ function convertSession(source, options) {
   }
   const bridges = new Map();
   if (!options.archive && !options.provider && !options.model) for (const event of source.events) {
-    const bridge = nativeBridge(source, event, generation);
-    if (bridge) bridges.set(bridge.seqs[0], bridge);
+    const from = event.data?.generation;
+    const bridge = nativeBridge(source, event, from);
+    if (bridge) bridges.set(bridge.seqs[0], { ...bridge, generation: from });
   }
   const skipped = new Set(), consumed = new Set(), records = [];
-  let parentID, outputTime = source.header.createdAt;
+  let parentID, outputTime = source.header.createdAt, partSerial = 0;
   const makeID = (prefix, index) => `${prefix}_${source.header.createdAt.toString(16).padStart(12, '0')}${index.toString(16).padStart(6, '0')}${revision.slice(0, 12)}`;
   function add(role, parts, event, model = target) {
     const interrupted = !!event.data.interrupted;
@@ -77,7 +79,7 @@ function convertSession(source, options) {
         ? { id, sessionID, role, parentID, time: { created: time, completed: time }, modelID: model.modelID, providerID: model.providerID, agent: 'build', mode: 'build', path: { cwd: directory, root: directory }, cost: 0, tokens: usage(event.data.usage), finish }
         : { id, sessionID, role: 'user', time: { created: time }, agent: 'build', model: target };
       const mapped = parts.map((part, pi) => {
-        const base = { id: makeID('prt', index * 100000 + pi), sessionID, messageID: id, metadata };
+        const base = { id: makeID('prt', partSerial++), sessionID, messageID: id, metadata };
         if (part.type === 'reasoning') return { ...base, type: 'reasoning', text: part.text, time: { start: time, end: time } };
         if (part.type !== 'tool') return { ...base, type: 'text', text: part.text, ...(part.snapshot ? { metadata: { ...metadata, dshToolSnapshot: digest(part.text) } } : {}) };
         const state = { input: part.input, metadata: { dshHistorical: true }, time: { start: time, end: Math.max(time, part.time) } };
@@ -88,10 +90,10 @@ function convertSession(source, options) {
       records.push({ info, parts: mapped });
     } else {
       const base = { id, type: role, time: { created: time }, metadata };
-      if (role !== 'assistant') records.push({ ...base, type: 'user', text: parts.map(part => part.text).join('\n') });
+      if (role !== 'assistant') records.push({ ...base, type: 'user', text: parts.map(part => part.text).join('') });
       else records.push({ ...base, agent: 'build', model: { providerID: model.providerID, id: model.modelID }, time: { created: time, completed: time }, finish, cost: 0, tokens: usage(event.data.usage), content: parts.map(part => {
         if (part.type !== 'tool') return { type: part.type, text: part.text };
-        const content = [{ type: 'text', text: part.output }];
+        const content = part.content?.length ? part.content : [{ type: 'text', text: part.output }];
         return { type: 'tool', id: part.id, name: part.name, executed: true, time: { created: time, completed: Math.max(time, part.time) }, state: part.error
           ? { status: 'error', input: part.input, error: { type: 'dsh-historical', message: part.output }, content }
           : { status: 'completed', input: part.input, content } };
@@ -109,13 +111,17 @@ function convertSession(source, options) {
   for (const event of events) {
     if (skipped.has(event.seq)) continue;
     const bridge = bridges.get(event.seq);
-    if (bridge) {
-      const record = structuredClone(bridge.record), index = records.length, id = makeID('msg', index);
+    const projected = bridge && transcodeNativeRecord(bridge.record, bridge.generation, generation, { directory, parentID, warnings });
+    if (projected) {
+      const record = projected, index = records.length, id = makeID('msg', index);
       if (generation === 'v1') {
         record.info.id = id; record.info.sessionID = sessionID;
         if (record.info.role === 'assistant') { record.info.parentID = parentID; record.info.path = { cwd: directory, root: directory }; }
         else parentID = id;
-        record.parts.forEach((part, pi) => Object.assign(part, { id: makeID('prt', index * 100000 + pi), sessionID, messageID: id }));
+        record.parts.forEach((part, pi) => {
+          Object.assign(part, { id: makeID('prt', partSerial++), sessionID, messageID: id });
+          part.state?.attachments?.forEach((file, ai) => Object.assign(file, { id: makeID('prt', partSerial++), sessionID, messageID: id }));
+        });
       } else record.id = id;
       for (const e of bridge.events) {
         skipped.add(e.seq);
@@ -136,12 +142,13 @@ function convertSession(source, options) {
     if (event.type === 'tool/result') continue;
     const message = event.type === 'user/message' ? event.data : event.data.message;
     if (event.type !== 'assistant/message') {
-      const content = textContent(message.content);
-      if (!content && !message.content.length) warnings.push(`事件 #${event.seq} 为空消息，已保留空正文`);
+      if (!message.content.length) warnings.push(`事件 #${event.seq} 为空消息，已保留空正文`);
       if (message.content.some(block => !['text'].includes(block.type))) warnings.push(`事件 #${event.seq} 的非文字用户/上下文块已保留原始结构与文字快照；附件字节未复制`);
       if (event.type !== 'user/message') warnings.push(`事件 #${event.seq} 的 ${message.role ?? event.type} 角色保存为历史上下文快照，不替代目标系统配置`);
       const prefix = event.type === 'user/message' ? '' : `[DSH 历史 ${message.role ?? event.type} 上下文快照；非 OpenCode 系统配置]\n`;
-      add('user', [{ type: 'text', text: prefix + content }], event);
+      const blocks = message.content.map(block => ({ type: 'text', text: blockText(block) }));
+      if (prefix) blocks.unshift({ type: 'text', text: prefix });
+      add('user', blocks.length ? blocks : [{ type: 'text', text: '' }], event);
       continue;
     }
     if (generation === 'v1' && !parentID) { warnings.push('原始截面没有前置用户消息，1.x 添加历史说明以满足 parentID'); add('user', [{ type: 'text', text: '[DSH 迁移：原始截面没有前置用户消息，以下为历史响应。]' }], { ...event, type: 'migration/synthetic' }); }
@@ -155,7 +162,9 @@ function convertSession(source, options) {
       if (consumed.has(block.id)) throw new Error(`重复工具调用 id：${block.id}`);
       consumed.add(block.id);
       if (!result) warnings.push(`工具 ${block.id} 缺少结果，已标记为历史中断`);
-      return { type: 'tool', id: block.id, name: block.name, input: argumentsObject(block.arguments, warnings), output: result ? textContent(result.data.message.content) : '[DSH 历史中断：没有工具结果；迁移未重新执行]', error: !result || !!result.data.message.isError, time: result?.time ?? event.time };
+      if (generation === 'v1' && result?.data.message.content.length > 1) warnings.push(`工具 ${block.id} 的多段结果合并为 1.x output，分块原件保留`);
+      if (result?.data.message.content.some(part => part.type !== 'text')) warnings.push(`工具 ${block.id} 的非文字结果保留为原始结构快照；附件字节未复制`);
+      return { type: 'tool', id: block.id, name: block.name, input: argumentsObject(block.arguments, warnings), content: result?.data.message.content.map(part => ({ type: 'text', text: blockText(part) })), output: result ? textContent(result.data.message.content) : '[DSH 历史中断：没有工具结果；迁移未重新执行]', error: !result || !!result.data.message.isError, time: result?.time ?? event.time };
     });
     const original = message.source;
     const model = options.provider || options.model ? target : { providerID: original?.provider ?? target.providerID, modelID: original?.model ?? target.modelID };

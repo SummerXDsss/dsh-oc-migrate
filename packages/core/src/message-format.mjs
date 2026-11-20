@@ -33,6 +33,7 @@ export function attachDshEnvelope(record, event, results = []) {
 }
 export function nativeBridge(source, event, generation) {
   const data = event.data;
+  if (!['v1', 'v2'].includes(generation)) return null;
   if (event.type !== 'migration/opencode-message' || data?.version !== 1 || data.generation !== generation || !Array.isArray(data.surfaceEventSeqs) || !data.surfaceEventSeqs.length || !data.record) return null;
   const positions = data.surfaceEventSeqs.map(seq => source.surfaceEventSeqs.indexOf(seq));
   if (positions.some((pos, i) => pos < 0 || (i > 0 && pos !== positions[0] + i))) return null;
