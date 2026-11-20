@@ -91,7 +91,7 @@ test('管理器模板：搜索/收藏/项目组合筛选，分页保留全局选
   let html=catalogHTML(c,v);assert.equal((html.match(/data-catalog-select=/g)||[]).length,40);assert.match(html,/已选 1 个对话/);assert.match(html,/1 \/ 2/);
   v.page=1;html=catalogHTML(c,v);assert.match(html,/&lt;script&gt;/);assert.doesNotMatch(html,/<script>alert/);
   v.focused='0';v.preview={id:'0',offset:0,total:1,messages:[{role:'assistant',active:false,text:'<img src=x onerror=alert(1)>'}]};
-  html=catalogHTML(c,v);assert.match(html,/&lt;img/);assert.match(html,/已被替换 · 全文保留/);assert.match(html,/不改源标题/);
+  html=catalogHTML(c,v);assert.match(html,/&lt;img/);assert.match(html,/较早版本 · 全文保留/);assert.match(html,/不改源标题/);
   assert.match(catalogHTML(c,v,true),/data-action="startSelected" disabled/);
 });
 

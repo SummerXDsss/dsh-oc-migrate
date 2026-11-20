@@ -9,6 +9,7 @@ use std::{
     time::Duration,
 };
 use tauri::{Emitter, Manager};
+use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_shell::{
     process::{CommandChild, CommandEvent},
     ShellExt,
@@ -26,6 +27,19 @@ fn fail_pending(bridge: &Bridge, message: &str) {
     for (_, sender) in bridge.pending.lock().unwrap().drain() {
         let _ = sender.send(Err(message.to_string()));
     }
+}
+fn github_url(target: &str) -> Result<&'static str, String> {
+    match target {
+        "author" => Ok("https://github.com/SummerXDsss"),
+        "project" => Ok("https://github.com/SummerXDsss/dsh-oc-migrate"),
+        _ => Err("这个 GitHub 入口不存在，请从左侧重新打开".into()),
+    }
+}
+#[tauri::command]
+fn open_github(app: tauri::AppHandle, target: String) -> Result<(), String> {
+    app.opener()
+        .open_url(github_url(&target)?, None::<&str>)
+        .map_err(|_| "GitHub 页面未打开，请检查默认浏览器后重试".into())
 }
 #[tauri::command]
 async fn desktop_request(
@@ -84,8 +98,9 @@ fn main() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .manage(Bridge::default())
-        .invoke_handler(tauri::generate_handler![desktop_request])
+        .invoke_handler(tauri::generate_handler![desktop_request, open_github])
         .setup(|app| {
             let root = app.path().app_data_dir()?;
             std::fs::create_dir_all(&root)?;
@@ -152,4 +167,32 @@ fn main() {
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::github_url;
+    #[test]
+    fn github_links_are_fixed_https_destinations() {
+        assert_eq!(
+            github_url("author").unwrap(),
+            "https://github.com/SummerXDsss"
+        );
+        assert_eq!(
+            github_url("project").unwrap(),
+            "https://github.com/SummerXDsss/dsh-oc-migrate"
+        );
+    }
+    #[test]
+    fn github_links_reject_unknown_targets() {
+        for target in [
+            "",
+            "https://example.com",
+            "file:///tmp/test",
+            "AUTHOR",
+            "author;echo test",
+        ] {
+            assert!(github_url(target).is_err());
+        }
+    }
 }

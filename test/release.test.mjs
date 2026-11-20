@@ -29,7 +29,7 @@ test('发布版本在 npm、CLI、Tauri 与 Rust 中保持一致，标题体现�
   assert.ok((await read('src-tauri/Cargo.toml')).includes(`version = "${pkg.version}"`));
   assert.ok((await read('src-tauri/Cargo.lock')).includes(`name = "dsh-oc-migrate-desktop"\nversion = "${pkg.version}"`));
   assert.ok((await read('bin/dsh-oc-migrate.mjs')).includes(`dsh-oc-migrate ${pkg.version} —`));
-  assert.ok((await read('desktop/src/main.ts')).includes(`v${pkg.version} · Tauri`));
+  assert.ok((await read('desktop/src/navigation.ts')).includes(`APP_VERSION = '${pkg.version}'`));
   assert.equal(tauri.app.windows[0].title, 'DSH ↔ OpenCode');
   assert.match(await read('desktop/index.html'), /<title>DSH ↔ OpenCode<\/title>/);
 });

@@ -12,3 +12,5 @@ src-tauri/binaries/*
 src-tauri/resources/
 
 .*.bun-build
+/output/playwright/
+/.playwright-cli/
