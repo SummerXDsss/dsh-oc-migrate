@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile, rename, readdir, open, unlink } from 'node:
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { contentDigest, digest, validateBundle } from '../../core/src/protocol.mjs';
-import { convertBundle } from '../../core/src/convert.mjs';
+import { convertBundle, CONVERTER_REVISION } from '../../core/src/convert.mjs';
 import { verifyTranscript } from '../../opencode-client/src/index.mjs';
 
 export async function atomicJSON(file, value) {
@@ -41,7 +41,7 @@ export class MigrationStore {
     validateBundle(bundle);
     const { client, directory, provider, model, includeArchive, stateSnapshots } = this.config;
     const generation = client?.generation ?? this.config.generation ?? 'v1';
-    const id = digest({ bundle: contentDigest(bundle), target: client?.identity ?? directory, directory, generation, provider: provider ?? null, model: model ?? null, includeArchive: includeArchive !== false, stateSnapshots: stateSnapshots !== false });
+    const id = digest({ converter: CONVERTER_REVISION, bundle: contentDigest(bundle), target: client?.identity ?? directory, directory, generation, provider: provider ?? null, model: model ?? null, includeArchive: includeArchive !== false, stateSnapshots: stateSnapshots !== false });
     return this.locked(id, async dir => {
       let report;
       try { report = await this.read(id); } catch (error) { if (error.code !== 'ENOENT') throw error; }

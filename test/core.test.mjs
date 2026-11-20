@@ -17,6 +17,11 @@ for (const generation of ['v1', 'v2']) {
     assert.equal(tool.state.status, 'completed');
     assert.equal(tool.state.input.path, 'README.md');
     assert.match(tool.state.output ?? tool.state.content[0].text, /原始文件内容/);
+    const snapshot = parts.find(p => p.type === 'text' && p.text.startsWith('[DSH 历史工具快照'));
+    assert.match(snapshot.text, /read_file/);
+    assert.match(snapshot.text, /README.md/);
+    assert.match(snapshot.text, /原始文件内容/);
+    assert.match(snapshot.text, /未重新执行/);
     assert.equal((assistant.info ?? assistant).tokens.input, 10);
     assert.match(JSON.stringify(transcript), /状态快照/);
     if (generation === 'v1') assert.ok(transcript.messages.some(m => m.info.id === assistant.info.parentID));

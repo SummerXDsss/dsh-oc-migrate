@@ -7,7 +7,8 @@ import { gzipSync } from 'node:zlib';
 import { fixture, mockClient } from './fixture.mjs';
 import { MigrationStore } from '../packages/middleware/src/store.mjs';
 import { createReceiver } from '../packages/middleware/src/server.mjs';
-import { digest } from '../packages/core/src/protocol.mjs';
+import { digest, contentDigest } from '../packages/core/src/protocol.mjs';
+import { atomicJSON } from '../packages/middleware/src/store.mjs';
 
 async function setup(t, config = {}) {
   const root = await mkdtemp(path.join(os.tmpdir(), 'dsh-migrate-test-'));
@@ -36,6 +37,18 @@ test('失败可重试，不把部分导入标记为成功', async t => {
   assert.equal(report.status, 'failed'); assert.match(report.error, /模拟离线/);
   client.import = original;
   assert.equal((await store.import(report.id)).status, 'imported');
+});
+test('GUI 可读工具投影升级不复用旧转换任务，也不覆盖旧会话', async t => {
+  const { store, client, root } = await setup(t);
+  const bundle = fixture();
+  const oldID = digest({ bundle: contentDigest(bundle), target: client.identity ?? '/target', directory: '/target', generation: 'v1', provider: null, model: null, includeArchive: true, stateSnapshots: true });
+  await store.locked(oldID, async dir => atomicJSON(path.join(dir, 'report.json'), { id: oldID, status: 'imported', sessions: [{ sessionID: 'old-session' }] }));
+  const before = await readFile(path.join(root, oldID, 'report.json'), 'utf8');
+  const upgraded = await store.receive(bundle, { importNow: true });
+  assert.notEqual(upgraded.id, oldID); assert.equal(upgraded.status, 'imported');
+  assert.equal(await readFile(path.join(root, oldID, 'report.json'), 'utf8'), before);
+  assert.equal((await store.receive(bundle, { importNow: true })).id, upgraded.id);
+  assert.equal(client.sessions.size, 1);
 });
 test('回滚前阻止删除已继续聊天的会话，保留别的任务已导入会话', async t => {
   const { store, client } = await setup(t);

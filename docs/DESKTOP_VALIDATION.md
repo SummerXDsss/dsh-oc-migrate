@@ -74,6 +74,16 @@
 - OpenCode 1.18.31 / 2.3.2 真实 CLI 覆盖跨项目与真实父子会话枚举、export → DSH → OpenCode 往返、原项目目录、原件、幂等和回滚。
 - 已安装 DSH NEXT 内的 `session-persistence-jsonl@0.2.1-rc.2` 实际加载生成日志，验证冷 list / open(read) / read / Session.deriveMessages；此项抓到了「Zstd 首帧必须仅含头行」的问题，已修正为独立头帧 + 事件批帧，并加入回归。
 - 打包 sidecar 首轮发现官方 dsh-llm 动态读取 package.json 路径失败，已使用仅编译时的版本嵌入适配，不改原生 Session / codec 校验语义。CI 对编译产物执行双向迁移与回滚。
-- **新增 DSH GUI / 0.4.0 Tauri 窗口点验：待解锁。** CUA 实测 Mac 锁屏，已请求用户解锁。原生冷读取成功不代表界面展示、列表刷新与继续对话完整性已验收。
+- 解锁后实际操作 0.4.0 Tauri：从隔离的 OpenCode 2.3.2 全局存储读取两个 Git 项目共 3 条（含归档）历史，一键迁入已安装 DSH NEXT 2.0.19-next。界面 3/3 完成，原生回读一致。
+- DSH 冷重启后搜索 BIDIR，打开 BETA：用户中文、系统/todo 快照正确。已完成助手步骤默认折叠；实际依次展开 Completed / Analysis completed / Called tools，看到「正在检查。」「先核对已有文件。」以及 read_file 参数 README.md 和完整「原始文件内容」输出。stream 为空不是这次观察的正文缺失原因，未为此伪造流事件。
+- DSH 的 Open in Finder 实际打开 `/private/tmp/dsh-oc-dual-gui-20261120/BIDIR-BETA`。未注册的工作区出现在 Ungrouped，不能把 cwd 保留误记为自动注册 DSH 工作区。
+- 使用 Tauri 将这 3 个物理 DSH 日志往返导入默认 OpenCode GUI 存储，3/3 通过。OpenCode 2.3.2 刷新后实际打开 ALPHA 主对话、归档和 BETA；压缩总结、后续回复、推理与归档工具输出可读。ALPHA 项目菜单显示正确绝对路径、main 分支和无更改。
+- 原生确认弹窗回滚未打开的 DSH 归档样本：界面任务与会话均显示已回滚，原件保留。
+- 普通 BETA 原生 read_file 卡片仍展不开输出，0.4.1 增加可读历史快照，并为会话/任务引入转换器版本，避免复用旧任务。最终补验结果见下节。
 
 本轮原始命令日志与回滚材料存于本地 `artifacts/bidirectional-20261120/`（不提交聊天原件）。以 `VERIFICATION.txt` 的最终状态为准。
+
+
+## 0.4.1 GUI 展示修补
+
+保留原生工具结构，另附带参数/结果文本；新增转换版本隔离测试，同时修正窗口双向标题和上次迁移的方向标识。最终真实窗口、回滚和 CI 结果完成后在本节补记。

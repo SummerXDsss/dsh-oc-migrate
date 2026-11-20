@@ -1,6 +1,9 @@
 import path from 'node:path';
 import { digest, validateBundle, SURFACE_TYPES } from './protocol.mjs';
 
+// Version both the converted session IDs and middleware jobs when projection changes.
+export const CONVERTER_REVISION = 'dsh-to-oc-readable-tools-v2';
+
 const zeros = () => ({ input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } });
 function usage(value = {}) {
   const n = key => Number.isFinite(value[key]) ? value[key] : 0;
@@ -39,7 +42,7 @@ function convertSession(source, options) {
   const states = new Map();
   if (options.stateSnapshots !== false) for (const event of source.events) if (/^(todo|goal)[/]/.test(event.type)) states.set(event.type.split('/')[0], event);
   // /oc-migrate 本身也会记 command/run/done；仅原始审计尾巴变化不应复制聊天。
-  const revision = digest({ header: source.header, title: source.title ?? null, inheritedEventCount: source.inheritedEventCount ?? 0, events, states: [...states.values()], directory, generation, target, archive: !!options.archive });
+  const revision = digest({ converter: CONVERTER_REVISION, header: source.header, title: source.title ?? null, inheritedEventCount: source.inheritedEventCount ?? 0, events, states: [...states.values()], directory, generation, target, archive: !!options.archive });
   const sessionID = `ses_${revision.slice(0, 26)}`;
   const warnings = [];
   // 先配对结果再转换 assistant；不把 tool/result 重复写成用户消息。
@@ -117,7 +120,13 @@ function convertSession(source, options) {
     });
     const original = message.source;
     const model = options.provider || options.model ? target : { providerID: original?.provider ?? target.providerID, modelID: original?.model ?? target.modelID };
-    add('assistant', parts, event, model);
+    // OpenCode 2.3.2's generic tool renderer doesn't expand DSH tool results.
+    // Retain native completed/error tool parts AND a readable historical copy.
+    // This is imported content, not a tool execution or a new model response.
+    const readable = parts.flatMap(part => part.type !== 'tool' ? [part] : [part, {
+      type: 'text', text: `[DSH 历史工具快照 · ${part.name} · ${part.id} · ${part.error ? '错误/中断' : '已完成'}；未重新执行]\n参数：\n${JSON.stringify(part.input, null, 2)}\n结果：\n${part.output || '(工具返回空结果)'}`,
+    }]);
+    add('assistant', readable, event, model);
   }
   for (const [id, event] of results) {
     if (!consumed.has(id)) {

@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "DSH OpenCode Migrate",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "identifier": "io.github.summerxdsss.dsh-oc-migrate",
   "build": {
     "beforeDevCommand": "npm run desktop:prepare && npm run desktop:web:dev",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "DSH → OpenCode",
+        "title": "DSH ↔ OpenCode",
         "width": 1200,
         "height": 820,
         "minWidth": 960,
@@ -41,7 +41,7 @@
       "icons/icon.ico"
     ],
     "category": "DeveloperTool",
-    "shortDescription": "DeepSeek Harness 对话历史迁移到 OpenCode",
+    "shortDescription": "DeepSeek Harness 与 OpenCode 双向对话迁移",
     "macOS": {
       "minimumSystemVersion": "13.0",
       "signingIdentity": "-",
