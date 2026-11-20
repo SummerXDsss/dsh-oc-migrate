@@ -5,6 +5,7 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import readline from 'node:readline';
 import path from 'node:path';
 import os from 'node:os';
+import { zstdCompressSync } from 'node:zlib';
 import { fixture } from '../fixture.mjs';
 import { createCliClient } from '../../packages/opencode-client/src/index.mjs';
 const targets = [{ generation: 'v1', binary: process.env.OPENCODE_V1_BIN }, { generation: 'v2', binary: process.env.OPENCODE_V2_BIN }];
@@ -40,8 +41,26 @@ for (const target of targets) {
     assert.equal((await rpc('retry', { id: report.id })).status, 'imported');
     assert.equal((await rpc('rollback', { id: report.id })).status, 'rolled-back');
     for (const item of report.sessions) assert.equal(await client.export(item.sessionID), null);
+    // A real physical DSH log, with one Zstd frame per row; no plugin/port/token
+    // or project configuration in the one-click request.
+    const local = fixture({ compact: true }).sessions[0]; local.header.cwd = directory;
+    const source = path.join(root, '.dsh/sessions/project/native'); await mkdir(source, { recursive: true });
+    const rows = [{ type: 'session', ...local.header, delegationDepth: 0 }, ...local.events];
+    await writeFile(path.join(source, 'session.v4.jsonl.zstd'), Buffer.concat(rows.map(row => zstdCompressSync(JSON.stringify(row) + '\n'))));
+    await rpc('startQuick', { binary: target.binary });
+    let quick;
+    for (let attempt = 0; attempt < 180; attempt++) {
+      quick = (await rpc('snapshot')).quick;
+      if (quick.status !== 'running') break;
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    assert.equal(quick.status, 'completed', JSON.stringify(quick.errors)); assert.equal(quick.imported, 1); assert.equal(quick.nativeSessions, 2);
+    const quickReport = (await rpc('snapshot')).jobs.find(job => job.id === quick.jobs[0].id);
+    for (const item of quickReport.sessions) assert.equal((await client.export(item.sessionID)).info.id, item.sessionID);
+    assert.equal((await rpc('rollback', { id: quickReport.id })).status, 'rolled-back');
+    for (const item of quickReport.sessions) assert.equal(await client.export(item.sessionID), null);
     child.stdin.end();
     const code = await new Promise(resolve => child.on('exit', resolve)); assert.equal(code, 0, error);
-    t.diagnostic(`sidecar=${compiled ? 'compiled Bun' : 'Node'}; ${target.generation} import=PASS; native export=PASS; retry=PASS; rollback=PASS; exit=0`);
+    t.diagnostic(`sidecar=${compiled ? 'compiled Bun' : 'Node'}; ${target.generation} import=PASS; native export=PASS; retry=PASS; rollback=PASS; one-click physical Zstd import/export/rollback=PASS; exit=0`);
   });
 }

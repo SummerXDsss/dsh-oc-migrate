@@ -1,6 +1,6 @@
 {
   "name": "dsh-oc-migrate",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "DeepSeek Harness 对话历史 → 本地中间件 → OpenCode CLI / GUI",
   "type": "module",
   "license": "MIT",
