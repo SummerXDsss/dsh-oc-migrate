@@ -39,7 +39,7 @@ npm run desktop:build
 ## CI / Release
 
 - 每次 push / PR：Node 22 / 24 单元、语法、前端构建、插件打包、macOS Rust 格式与编译检查，以及原生 OpenCode 1.18.31 / 2.3.2 CLI 与服务回归。
-- 推送 `v<package.json version>` tag：先回归，再四平台构建，并实际运行每个平台的编译 sidecar JSONL 测试。
+- 推送 `v<package.json version>` tag：并行回归与四平台构建，并实际运行每个平台的编译 sidecar JSONL 测试。
 - 所有构建成功后才发布 Release，包含 DMG（ARM64 / Intel）、NSIS、DEB、AppImage、DSH 插件 `.tgz` 和 SHA256SUMS.txt。失败不会发布半套新 Release。手动运行默认只产出构建 artifacts，勾选 publish 才发布；已存在 Release 不覆盖，请提升版本。
 - 工作流不上传应用数据、用户导出历史或令牌。macOS 使用 ad-hoc 签名并验证 bundle 完整性，尚未配置 Developer ID 公证；Windows 未配置开发者证书。当前不包含自动更新服务。
 
