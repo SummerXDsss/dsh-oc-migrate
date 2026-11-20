@@ -1,0 +1,23 @@
+{
+  "name": "dsh-oc-migrate",
+  "version": "0.1.0",
+  "description": "DeepSeek Harness 对话历史 → 本地中间件 → OpenCode CLI / GUI",
+  "type": "module",
+  "license": "MIT",
+  "engines": { "node": ">=22.19" },
+  "bin": { "dsh-oc-migrate": "./bin/dsh-oc-migrate.mjs" },
+  "exports": {
+    ".": "./packages/plugin/src/index.mjs",
+    "./core": "./packages/core/src/convert.mjs",
+    "./middleware": "./packages/middleware/src/server.mjs"
+  },
+  "files": ["bin", "packages", "docs", "examples", "README.md", "LICENSE"],
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "check": "node scripts/check.mjs",
+    "test:integration": "node --test test/integration/*.test.mjs",
+    "start": "node bin/dsh-oc-migrate.mjs serve"
+  },
+  "dependencies": { "@deepseek-ai/schemastery": "3.19.0" },
+  "repository": { "type": "git", "url": "https://github.com/SummerXDsss/dsh-oc-migrate.git" }
+}

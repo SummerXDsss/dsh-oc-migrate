@@ -1,0 +1,119 @@
+# dsh-oc-migrate
+
+将 **DeepSeek Harness 的完整对话历史**经本地中间件迁移到 **OpenCode 1.x / 2.x**，供 CLI 和 GUI 查看、继续对话。
+
+这是独立社区项目，与 DeepSeek 或 OpenCode 官方没有隶属关系。
+
+```text
+DSH Host 插件 → gzip 迁移包 → 本地中间件 → OpenCode 原生 import / export
+                                                   ├─ CLI
+                                                   └─ 同一后端的 GUI
+```
+
+## 当前进展
+
+- 已实现：`/oc-migrate current|list|all|SESSION_ID`、完整原始日志归档、压缩截面一致性检查、分批传输、本地持久化、双版本转换、原生导入适配、回读校验、重试和回滚保护。
+- 对话分为“有效上下文”和“归档全文”。存在被压缩替换的消息时，默认额外生成 `[归档全文]` 会话，保留压缩前对话；原始事件日志始终另外留存。
+- 第一批单元/本地链路测试已通过。真实 OpenCode 版本回归结果见后续验证记录；真实 DSH profile 与 GUI 显示验收另行记录，不以模拟测试代替。
+- 文件/图片引用会保留，但附件字节打包尚未实现；历史进程、工具、审批、KV cache 不会恢复执行。
+
+调研、版本与源码依据：[docs/RESEARCH.md](docs/RESEARCH.md)。
+
+## 1. 安装与初始化
+
+Node.js ≥ 22.19：
+
+```bash
+npm ci
+npm run check
+npm test
+npm pack
+
+node bin/dsh-oc-migrate.mjs init --state "$HOME/.local/share/dsh-oc-migrate"
+```
+
+令牌只写入权限为 `0600` 的文件，不打印到终端。以下命令中的项目路径请替换成实际 OpenCode 工作目录。
+
+## 2. 启动本地中间件
+
+```bash
+node bin/dsh-oc-migrate.mjs serve \
+  --directory /absolute/path/to/project \
+  --token-file "$HOME/.local/share/dsh-oc-migrate/receiver.token" \
+  --auto-import
+```
+
+默认只监听 `127.0.0.1:48765`。省略 `--auto-import` 时只接收并转换，检查后用 `retry JOB_ID` 导入。接收端目标目录和二进制由本机启动参数决定，导出包不能指定执行命令。
+
+- `--binary /path/to/opencode`：选择二进制；默认执行 PATH 中的 `opencode`。
+- `--generation auto|v1|v2`：自动读取版本，或强制校验版本。
+- `--data-home /path/to/isolated/data`：隔离 OpenCode 数据目录；GUI 也必须连接相同后端才会看到会话。
+- `--provider deepseek --model deepseek-chat`：显式重绑历史模型标识。继续对话前在 OpenCode 选择可用模型。
+- `--no-archive`：只导入有效上下文，仍保存完整原始包。
+- `--no-state-snapshots`：不向会话追加 goal/todo 文字快照，原始事件仍保留。
+
+### GUI 连接的是另一台 2.x 服务器
+
+```bash
+node bin/dsh-oc-migrate.mjs serve \
+  --directory /absolute/server/project \
+  --token-file /absolute/path/receiver.token \
+  --server http://127.0.0.1:4096 \
+  --password-file /absolute/path/opencode-server-password \
+  --auto-import
+```
+
+HTTP 适配器使用 OpenCode 2.x 原生 `/api/experimental/session/import`，并导出回读验证；认证默认为用户名 `opencode` 的 Basic Auth。使用 GUI 实际连接的服务器，不要把独立本地数据库的成功当作远端 GUI 成功。
+
+## 3. DSH 插件
+
+将 `npm pack` 生成的 `dsh-oc-migrate-0.1.0.tgz` 安装进 DSH 对应 profile，或在该 profile 中安装本仓库。参考配置如下（完整步骤见 [插件配置](docs/PLUGIN.md)）：
+
+```yaml
+- name: dsh-oc-migrate
+  config:
+    receiver: http://127.0.0.1:48765
+    tokenFile: /absolute/path/receiver.token
+    batchSize: 20
+```
+
+插件依赖 `commands` 和 `sessionQuery`；需要 profile 已挂载官方查询 backend，例如 session-query-sqlite。它是 **Host 插件**，不是浏览器脚本。
+
+```text
+/oc-migrate list       # 列出所有可查询的 live / persisted 会话
+/oc-migrate all        # 尽量完整迁移全部会话，包含压缩前原始事件
+/oc-migrate current    # 当前会话（缺省）
+/oc-migrate SESSION_ID # 指定会话
+```
+
+DSH Host 在远程机器时，`127.0.0.1` 是远程机器，需要 SSH 反向隧道与远程 token 文件，详见插件文档。
+
+## 4. 本地导出文件与离线转换
+
+输入为本项目版本化迁移包，不是任意 DeepSeek 网页 JSON，也不是 DSH 官方 ZIP 的直接解压内容。
+
+```bash
+node bin/dsh-oc-migrate.mjs convert /absolute/path/source.json \
+  --directory /absolute/path/to/project --generation v1 --out /absolute/path/output
+
+node bin/dsh-oc-migrate.mjs import /absolute/path/source.json \
+  --directory /absolute/path/to/project
+```
+
+每个任务目录保留 `source.json`、逐会话原生 transcript 和 `report.json`。令牌、原始聊天、导出包、数据目录不要提交到仓库。
+
+## 5. 回归与回滚
+
+```bash
+node bin/dsh-oc-migrate.mjs jobs
+node bin/dsh-oc-migrate.mjs retry JOB_ID --directory /absolute/path/to/project
+node bin/dsh-oc-migrate.mjs rollback JOB_ID --directory /absolute/path/to/project
+```
+
+重试/回滚时复用原来的 `--state`、`--binary`、`--data-home` 或 `--server`。回滚先回读核对，不删除已经新增或修改正文的会话，也不删除由其他迁移任务提前创建的相同会话。失败导入保留原件及进度，重试不会执行历史工具。
+
+开发回归：`npm run check && npm test`。真实二进制回归：`npm run test:integration`，使用隔离数据目录，不访问现有 OpenCode 历史。
+
+## 后续
+
+真实 DSH profile 与 GUI 验收、附件字节导出、超大单会话流式分片、DSH 旧版本格式矩阵。`all` 只覆盖查询 backend 当前可列出的会话，不声称能读取已经删除或不可访问的历史。

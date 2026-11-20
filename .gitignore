@@ -1,0 +1,6 @@
+node_modules/
+artifacts/
+.migrate/
+*.tgz
+.DS_Store
+.env

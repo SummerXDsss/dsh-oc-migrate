@@ -1,0 +1,135 @@
+import path from 'node:path';
+import { digest, validateBundle, SURFACE_TYPES } from './protocol.mjs';
+
+const zeros = () => ({ input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } });
+function usage(value = {}) {
+  const n = key => Number.isFinite(value[key]) ? value[key] : 0;
+  return { input: n('inputTokens'), output: n('outputTokens'), reasoning: n('reasoningTokens'), cache: { read: n('cacheReadTokens'), write: n('cacheWriteTokens') } };
+}
+const blockText = block => typeof block.text === 'string' ? block.text : `[DSH ${block.type ?? 'unknown'} 原始记录] ${JSON.stringify(block)}`;
+const textContent = content => content.map(blockText).join('\n');
+function argumentsObject(raw, warnings) {
+  try {
+    const value = JSON.parse(raw);
+    if (value && typeof value === 'object' && !Array.isArray(value)) return value;
+  } catch { /* 原始参数仍被保留，不执行 */ }
+  warnings.push('工具参数不是 JSON 对象，保留为 _dshRawArguments');
+  return { _dshRawArguments: raw };
+}
+
+/** raw log 全量留在迁移包；仅有效 surface 成为下一轮模型上下文。 */
+export function convertBundle(bundle, options) {
+  validateBundle(bundle);
+  if (!options || !path.isAbsolute(options.directory)) throw new Error('目标 directory 必须为本机绝对路径');
+  const generation = options.generation ?? 'v1';
+  if (!['v1', 'v2'].includes(generation)) throw new Error('generation 应为 v1 或 v2');
+  return bundle.sessions.flatMap(session => {
+    const config = { ...options, generation };
+    const active = convertSession(session, config);
+    const allMessages = session.events.filter(event => SURFACE_TYPES.has(event.type));
+    return options.includeArchive !== false && allMessages.length > session.surfaceEventSeqs.length
+      ? [active, convertSession(session, { ...config, archive: true })] : [active];
+  });
+}
+
+function convertSession(source, options) {
+  const { directory, generation } = options;
+  const target = { providerID: options.provider ?? 'deepseek', modelID: options.model ?? 'deepseek-chat' };
+  const revision = digest({ source, directory, generation, target, archive: !!options.archive, stateSnapshots: options.stateSnapshots !== false });
+  const sessionID = `ses_${revision.slice(0, 26)}`;
+  const warnings = [];
+  const events = options.archive ? source.events.filter(event => SURFACE_TYPES.has(event.type)) : source.surfaceEventSeqs.map(seq => source.events[seq]);
+  // 先配对结果再转换 assistant；不把 tool/result 重复写成用户消息。
+  const results = new Map();
+  for (const event of events.filter(event => !options.archive && event.type === 'tool/result')) {
+    const id = event.data.message.toolCallId;
+    if (results.has(id)) throw new Error(`重复工具结果：${id}`);
+    results.set(id, event);
+  }
+  const consumed = new Set(), records = [];
+  let parentID;
+  const makeID = (prefix, index) => `${prefix}_${source.header.createdAt.toString(16).padStart(12, '0')}${index.toString(16).padStart(6, '0')}${revision.slice(0, 12)}`;
+  function add(role, parts, event, model = target) {
+    const index = records.length, id = makeID('msg', index), time = event.time;
+    const metadata = { dsh: { sessionID: source.header.id, eventSeq: event.seq, eventType: event.type } };
+    if (generation === 'v1') {
+      const info = role === 'assistant'
+        ? { id, sessionID, role, parentID, time: { created: time, completed: time }, modelID: model.modelID, providerID: model.providerID, agent: 'build', mode: 'build', path: { cwd: directory, root: directory }, cost: 0, tokens: usage(event.data.usage), finish: 'stop' }
+        : { id, sessionID, role: 'user', time: { created: time }, agent: 'build', model: target };
+      const mapped = parts.map((part, pi) => {
+        const base = { id: makeID('prt', index * 100000 + pi), sessionID, messageID: id, metadata };
+        if (part.type === 'reasoning') return { ...base, type: 'reasoning', text: part.text, time: { start: time, end: time } };
+        if (part.type !== 'tool') return { ...base, type: 'text', text: part.text };
+        const state = { input: part.input, metadata: { dshHistorical: true }, time: { start: time, end: Math.max(time, part.time) } };
+        return { ...base, type: 'tool', callID: part.id, tool: part.name, state: part.error
+          ? { ...state, status: 'error', error: part.output }
+          : { ...state, status: 'completed', output: part.output, title: part.name } };
+      });
+      records.push({ info, parts: mapped });
+    } else {
+      const base = { id, type: role, time: { created: time }, metadata };
+      if (role !== 'assistant') records.push({ ...base, type: 'user', text: parts.map(part => part.text).join('\n') });
+      else records.push({ ...base, agent: 'build', model: { providerID: model.providerID, id: model.modelID }, time: { created: time, completed: time }, finish: 'stop', cost: 0, tokens: usage(event.data.usage), content: parts.map(part => {
+        if (part.type !== 'tool') return { type: part.type, text: part.text };
+        const content = [{ type: 'text', text: part.output || '(工具返回空结果)' }];
+        return { type: 'tool', id: part.id, name: part.name, executed: true, time: { created: time, completed: Math.max(time, part.time) }, state: part.error
+          ? { status: 'error', input: part.input, error: { type: 'dsh-historical', message: part.output }, content }
+          : { status: 'completed', input: part.input, content } };
+      }) });
+    }
+    if (role !== 'assistant') parentID = id;
+  }
+  for (const event of events) {
+    if (options.archive) {
+      const message = event.type === 'user/message' ? event.data : event.data.message;
+      const prefix = `[DSH 原始事件 #${event.seq} ${event.type}；${source.surfaceEventSeqs.includes(event.seq) ? '当前有效' : '已被替换'}]\n`;
+      if (event.type === 'assistant/message' && !parentID) add('user', [{ type: 'text', text: '[归档全文：仅用于查阅，不恢复执行]' }], event);
+      const parts = [{ type: 'text', text: prefix }, ...message.content.map(block => ({ type: block.type === 'reasoning' ? 'reasoning' : 'text', text: blockText(block) }))];
+      add(event.type === 'assistant/message' ? 'assistant' : 'user', parts, event);
+      continue;
+    }
+    if (event.type === 'tool/result') continue;
+    const message = event.type === 'user/message' ? event.data : event.data.message;
+    if (event.type !== 'assistant/message') {
+      const content = textContent(message.content);
+      if (!content) continue;
+      const prefix = event.type === 'user/message' ? '' : `[DSH 历史 ${message.role ?? event.type} 上下文快照；非 OpenCode 系统配置]\n`;
+      add('user', [{ type: 'text', text: prefix + content }], event);
+      continue;
+    }
+    if (!parentID) add('user', [{ type: 'text', text: '[DSH 迁移：原始截面没有前置用户消息，以下为历史响应。]' }], event);
+    const parts = message.content.map(block => {
+      if (block.type === 'text' || block.type === 'reasoning') return { type: block.type, text: block.text };
+      if (block.type !== 'tool-call') {
+        warnings.push(`附件或扩展块 ${block.type} 以原始引用文字保留，未复制字节`);
+        return { type: 'text', text: blockText(block) };
+      }
+      const result = results.get(block.id);
+      if (consumed.has(block.id)) throw new Error(`重复工具调用 id：${block.id}`);
+      consumed.add(block.id);
+      if (!result) warnings.push(`工具 ${block.id} 缺少结果，已标记为历史中断`);
+      return { type: 'tool', id: block.id, name: block.name, input: argumentsObject(block.arguments, warnings), output: result ? textContent(result.data.message.content) : '[DSH 历史中断：没有工具结果；迁移未重新执行]', error: !result || !!result.data.message.isError, time: result?.time ?? event.time };
+    });
+    const original = message.source;
+    const model = options.provider || options.model ? target : { providerID: original?.provider ?? target.providerID, modelID: original?.model ?? target.modelID };
+    add('assistant', parts, event, model);
+  }
+  for (const [id, event] of results) {
+    if (!consumed.has(id)) {
+      warnings.push(`工具结果 ${id} 没有有效 surface 调用，已保留为文字`);
+      add('user', [{ type: 'text', text: `[DSH 孤立工具结果 ${id}]\n${textContent(event.data.message.content)}` }], event);
+    }
+  }
+  if (options.stateSnapshots !== false) {
+    const states = new Map();
+    for (const event of source.events) if (/^(todo|goal)[/]/.test(event.type)) states.set(event.type.split('/')[0], event);
+    if (states.size) add('user', [{ type: 'text', text: '[DSH 状态快照；仅作历史背景，不恢复任务执行]\n' + [...states.values()].map(event => `${event.type}: ${JSON.stringify(event.data)}`).join('\n') }], [...states.values()].at(-1));
+  }
+  const created = source.header.createdAt, updated = source.events.reduce((time, event) => Math.max(time, event.time), created);
+  const metadata = { dshMigration: { revision, view: options.archive ? 'archive' : 'active', sourceID: source.header.id, parentSession: source.header.parentSession ?? null, sourceCwd: source.header.cwd ?? null, rawEventCount: source.events.length, surfaceEventCount: events.length } };
+  const title = (options.archive ? '[归档全文] ' : '') + (source.title || `DeepSeek · ${source.header.id}`);
+  const info = generation === 'v1'
+    ? { id: sessionID, slug: `dsh-${revision.slice(0, 12)}`, projectID: 'global', directory, title, version: '1.18.31', time: { created, updated }, metadata }
+    : { id: sessionID, projectID: 'global', location: { directory }, title, cost: 0, tokens: zeros(), time: { created, updated }, metadata };
+  return { sourceID: source.header.id, sessionID, revision, generation, warnings, transcript: { info, messages: records } };
+}
