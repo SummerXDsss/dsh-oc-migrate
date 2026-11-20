@@ -9,7 +9,7 @@ import { fixture } from './fixture.mjs';
 import { ReverseStore, detectDshEncoding, dshProjectKey } from '../packages/middleware/src/reverse.mjs';
 import { listSessionPages } from '../packages/opencode-client/src/index.mjs';
 import { decodeZstdFrames } from '../packages/plugin/src/local-reader.mjs';
-import { zstdDecompressSync } from 'node:zlib';
+import { zstdDecompressSync, zstdCompressSync } from 'node:zlib';
 import { captureLocalSession } from '../packages/plugin/src/local-reader.mjs';
 import { DesktopService } from '../packages/desktop/src/service.mjs';
 const makeTranscript = generation => convertBundle(fixture(), { generation, directory: '/tmp/迁移项目' })[0].transcript;
@@ -34,8 +34,13 @@ test('反向原件、幂等导入、回滚、重试和明文/压缩编码', asyn
   assert.equal(first.encoding, 'zstd');
   const compressed = await readFile(first.sessions[0].file);
   assert.ok(compressed.length);
-  // Node stops at the first frame: it must be a single parseable header row.
-  const firstFrame = zstdDecompressSync(compressed).toString('utf8');
+  // Node releases differ on concatenated-frame decompression. Isolate the
+  // expected first frame explicitly instead of depending on that behavior.
+  const plainBytes = convertOpenCode(transcript).bytes;
+  const headerBytes = plainBytes.subarray(0, plainBytes.indexOf(10) + 1);
+  const headerFrame = zstdCompressSync(headerBytes);
+  assert.deepEqual(compressed.subarray(0, headerFrame.length), headerFrame);
+  const firstFrame = zstdDecompressSync(compressed.subarray(0, headerFrame.length)).toString('utf8');
   assert.equal(JSON.parse(firstFrame).type, 'session');
   assert.equal(firstFrame.split('\n').length, 2);
   assert.ok(decodeZstdFrames(compressed).includes(Buffer.from('原始文件内容')));
