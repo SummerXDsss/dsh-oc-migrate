@@ -11,14 +11,14 @@
 
 中文 GUI 是主要入口：选择方向 → 自动发现 → 一键迁移全部对话 → 原生回读验证。内置中间件与运行时；插件接收、手动连接和 CLI 保留为高级方式。
 
-[下载桌面版](https://github.com/SummerXDsss/dsh-oc-migrate/releases/latest) · [桌面使用与开发](docs/DESKTOP.md)
+[下载桌面版](https://github.com/SummerXDsss/dsh-oc-migrate/releases/latest) · [桌面使用与开发](docs/DESKTOP.md) · [Windows / 普通 Linux 安装](docs/PLATFORMS.md)
 
 ```bash
 npm ci
 npm run desktop:dev
 ```
 
-推送版本 tag 后，CI 并行回归与构建，全部成功才发布 macOS / Windows / Linux 安装包和插件包。
+推送版本 tag 后，CI 并行回归与构建，全部成功才发布 macOS / Windows / Linux（DEB、RPM、AppImage）安装包和插件包。
 
 将 **DeepSeek Harness 的完整对话历史**经本地中间件迁移到 **OpenCode 1.x / 2.x**，供 CLI 和 GUI 查看、继续对话。
 

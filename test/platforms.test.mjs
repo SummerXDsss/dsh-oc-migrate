@@ -25,11 +25,11 @@ test('2.x staged CLI 优先：只读直接版本目录、数值排序、过滤�
  const files=await discoverBinaries('C:\\Users\\张 三',{platform:'win32',arch:'x64',env:{},readDir:async file=>{assert.equal(file,root);return versions;},inspect:async file=>file.includes('2.12.0')?missing():{isFile:()=>true}});
  assert.equal(files[0],root+'\\2.10.0-x64\\opencode-cli.exe');assert.equal(files[1],root+'\\2.3.2-x64\\opencode-cli.exe');assert(!files.some(x=>x.includes('2.20.0')));
 });
-test('Linux staged CLI 真目录读取；权限不足时保留系统候选',async t=>{
+test('本机 staged CLI 真目录读取；权限不足时保留系统候选',async t=>{
  const home=await mkdtemp(path.join(os.tmpdir(),'dsh-platform-'));t.after(()=>rm(home,{recursive:true,force:true}));
- const opts={platform:'linux',env:{XDG_CONFIG_HOME:path.join(home,'配置 空格')},arch:'x64'},dir=path.join(desktopCliRoots(home,opts)[0],'2.3.2-x64');await mkdir(dir,{recursive:true});await writeFile(path.join(dir,'opencode-cli'),'fixture');
- assert.equal((await discoverBinaries(home,opts))[0],path.join(dir,'opencode-cli'));
- const rows=await discoverBinaries(home,{...opts,readDir:async()=>{throw Object.assign(Error(),{code:'EACCES'});}});assert(rows.includes('/usr/bin/opencode'));
+ const opts={platform:process.platform,env:{XDG_CONFIG_HOME:path.join(home,'配置 空格'),APPDATA:path.join(home,'配置 空格')},arch:'x64'},dir=path.join(desktopCliRoots(home,opts)[0],'2.3.2-x64');await mkdir(dir,{recursive:true});const name=process.platform==='win32'?'opencode-cli.exe':'opencode-cli';await writeFile(path.join(dir,name),'fixture');
+ assert.equal((await discoverBinaries(home,opts))[0],path.join(dir,name));
+ const rows=await discoverBinaries(home,{...opts,readDir:async()=>{throw Object.assign(Error(),{code:'EACCES'});}});assert(rows.includes(process.platform==='win32'?'opencode.exe':'/usr/bin/opencode'));
 });
 test('Windows npm shim 解析原生 .exe；参数不交给 shell，不执行无关批处理',async()=>{
  const home='C:\\Users\\张 三 & 测试',root=home+'\\AppData\\Roaming\\npm';const expected=root+'\\node_modules\\@opencode\\cli\\bin\\opencode.exe';
@@ -64,4 +64,21 @@ test('离线检查：Windows CSV、Linux/macOS 可执行名，普通 node 与编
 
 test('原生 CI 平台映射不依赖 bash、WSL 或 .cmd shim',()=>{
  assert.equal(nativeTarget('win32','x64'),'x86_64-pc-windows-msvc');assert.equal(nativeTarget('linux','x64'),'x86_64-unknown-linux-gnu');assert.throws(()=>nativeTarget('linux','mips'));
+});
+
+test('发行配置包含 Windows 原生 runner、当前用户 WebView2 安装与 Linux RPM',async()=>{
+ const read=name=>readFile(new URL('../'+name,import.meta.url),'utf8');
+ const config=JSON.parse(await read('src-tauri/tauri.conf.json'));assert.equal(config.bundle.windows.nsis.installMode,'currentUser');assert.equal(config.bundle.windows.webviewInstallMode.type,'embedBootstrapper');
+ assert.match(await read('.github/workflows/test.yml'),/os: \[ubuntu-22\.04, windows-2022\]/);assert.match(await read('.github/workflows/test.yml'),/npm run test:native:ci/);
+ const release=await read('.github/workflows/release.yml');assert.match(release,/bundles: deb,rpm,appimage/);assert.match(release,/bundle\/rpm\/\*\.rpm/);assert.match(release,/cp scripts\/start-linux\.sh/);
+ assert.match(await read('scripts/desktop-prepare.mjs'),/bun-windows-x64-baseline/);assert.doesNotMatch(await read('scripts/desktop-prepare.mjs'),/shell:\s*true/);
+});
+
+test('Linux 无 FUSE 启动脚本保留中文/空格文件路径与完整参数', {skip:process.platform!=='linux'},async t=>{
+ const {execFile}=await import('node:child_process');const{promisify}=await import('node:util');
+ const root=await mkdtemp(path.join(os.tmpdir(),'中文 空格 image-'));t.after(()=>rm(root,{recursive:true,force:true}));const file=path.join(root,'DSH 验收.AppImage');
+ await writeFile(file,'#!/bin/sh\nprintf "%s\\n" "${APPIMAGE_EXTRACT_AND_RUN:-native}" "$@"\n',{mode:0o600});
+ const run=promisify(execFile),script=new URL('../scripts/start-linux.sh',import.meta.url);const {fileURLToPath}=await import('node:url');
+ const result=await run('sh',[fileURLToPath(script),file,'中文 参数','a&b']);assert.deepEqual(result.stdout.trim().split('\n').slice(1),['中文 参数','a&b']);
+ await assert.rejects(run('sh',[fileURLToPath(script),path.join(root,'missing.AppImage')]));
 });
