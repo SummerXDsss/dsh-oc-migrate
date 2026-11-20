@@ -47,9 +47,9 @@ export function validateBundle(bundle) {
     if (!Array.isArray(session.events)) fail('events 应为数组');
     if (session.title !== undefined && typeof session.title !== 'string') fail('title 应为字符串');
     for (const [index, event] of session.events.entries()) {
-      if (event?.seq !== index || !integer(event.time) || typeof event.type !== 'string' || !event.data || typeof event.data !== 'object') fail(`事件无效或 seq 不连续：${header.id} #${index}`);
+      if (event?.seq !== index || !integer(event.time) || typeof event.type !== 'string' || !Object.hasOwn(event, 'data')) fail(`事件无效或 seq 不连续：${header.id} #${index}`);
       if (SURFACE_TYPES.has(event.type)) {
-        const message = event.type === 'user/message' ? event.data : event.data.message;
+        const message = event.type === 'user/message' ? event.data : event.data?.message;
         if (!message || !Array.isArray(message.content)) fail(`消息缺少 content：seq=${index}`);
       }
     }

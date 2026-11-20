@@ -47,11 +47,13 @@ function convertSession(source, options) {
     results.set(id, event);
   }
   const consumed = new Set(), records = [];
-  let parentID;
+  let parentID, outputTime = source.header.createdAt;
   const makeID = (prefix, index) => `${prefix}_${source.header.createdAt.toString(16).padStart(12, '0')}${index.toString(16).padStart(6, '0')}${revision.slice(0, 12)}`;
   function add(role, parts, event, model = target) {
-    const index = records.length, id = makeID('msg', index), time = event.time;
-    const metadata = { dsh: { sessionID: source.header.id, eventSeq: event.seq, eventType: event.type } };
+    // surface 替换可以把较晚的事件插回较早位置；保持显示时间非递减，原时间另存。
+    const index = records.length, id = makeID('msg', index), time = Math.max(outputTime, event.time);
+    outputTime = time;
+    const metadata = { dsh: { sessionID: source.header.id, eventSeq: event.seq, eventType: event.type, originalTime: event.time } };
     if (generation === 'v1') {
       const info = role === 'assistant'
         ? { id, sessionID, role, parentID, time: { created: time, completed: time }, modelID: model.modelID, providerID: model.providerID, agent: 'build', mode: 'build', path: { cwd: directory, root: directory }, cost: 0, tokens: usage(event.data.usage), finish: 'stop' }

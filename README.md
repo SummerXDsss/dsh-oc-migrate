@@ -14,7 +14,7 @@ DSH Host 插件 → gzip 迁移包 → 本地中间件 → OpenCode 原生 impor
 
 - 已实现：`/oc-migrate current|list|all|SESSION_ID`、完整原始日志归档、压缩截面一致性检查、分批传输、本地持久化、双版本转换、原生导入适配、回读校验、重试和回滚保护。
 - 对话分为“有效上下文”和“归档全文”。存在被压缩替换的消息时，默认额外生成 `[归档全文]` 会话，保留压缩前对话；原始事件日志始终另外留存。
-- 第一批单元/本地链路测试已通过。真实 OpenCode 版本回归结果见后续验证记录；真实 DSH profile 与 GUI 显示验收另行记录，不以模拟测试代替。
+- 已通过 OpenCode **1.18.31 / 2.3.2** 真实二进制隔离导入、导出回读、幂等和删除回滚；真实 DSH profile 与 GUI 显示验收另行记录，不以模拟测试代替。
 - 文件/图片引用会保留，但附件字节打包尚未实现；历史进程、工具、审批、KV cache 不会恢复执行。
 
 调研、版本与源码依据：[docs/RESEARCH.md](docs/RESEARCH.md)。
@@ -70,12 +70,14 @@ HTTP 适配器使用 OpenCode 2.x 原生 `/api/experimental/session/import`，�
 将 `npm pack` 生成的 `dsh-oc-migrate-0.1.0.tgz` 安装进 DSH 对应 profile，或在该 profile 中安装本仓库。参考配置如下（完整步骤见 [插件配置](docs/PLUGIN.md)）：
 
 ```yaml
-- name: dsh-oc-migrate
+- id: dsh-oc-migrate
   config:
     receiver: http://127.0.0.1:48765
     tokenFile: /absolute/path/receiver.token
     batchSize: 20
 ```
+
+上例用于覆盖插件管理器已经创建的同 id 条目。手动新增时必须使用 `insert`，见插件配置文档。
 
 插件依赖 `commands` 和 `sessionQuery`；需要 profile 已挂载官方查询 backend，例如 session-query-sqlite。它是 **Host 插件**，不是浏览器脚本。
 

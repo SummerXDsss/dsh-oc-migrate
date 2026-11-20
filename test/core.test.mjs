@@ -29,6 +29,10 @@ for (const generation of ['v1', 'v2']) {
     assert.match(JSON.stringify(archive.transcript), /原始文件内容/);
     assert.match(archive.transcript.info.title, /归档全文/);
     assert.notEqual(active.sessionID, archive.sessionID);
+    for (const item of [active, archive]) {
+      const times = item.transcript.messages.map(m => (m.info ?? m).time.created);
+      assert.deepEqual(times, [...times].sort((a, b) => a - b));
+    }
     assert.equal(active.transcript.info.metadata.dshMigration.view, 'active');
     assert.equal(convertBundle(fixture({ compact: true }), { directory: '/target', generation, includeArchive: false }).length, 1);
   });

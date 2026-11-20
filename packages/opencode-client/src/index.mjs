@@ -36,7 +36,8 @@ export async function createCliClient(config) {
     }
   };
   const version = (await run(['--version'])).stdout.trim();
-  const detected = /^1\./.test(version) ? 'v1' : /^2\./.test(version) ? 'v2' : undefined;
+  const major = version.match(/(?:^|\s)v?([12])\.\d+\.\d+(?:[-+][\w.-]+)?(?:$|\s)/)?.[1];
+  const detected = major ? `v${major}` : undefined;
   if (!detected) throw new Error(`未验证的 OpenCode 版本：${version}`);
   const generation = config.generation && config.generation !== 'auto' ? config.generation : detected;
   if (generation !== detected) throw new Error(`目标版本 ${generation} 与二进制 ${version} 不一致`);

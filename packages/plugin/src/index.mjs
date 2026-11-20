@@ -19,12 +19,8 @@ export async function captureSession(query, id, signal) {
     if (surface.capturedThroughSeq !== (raw.events.at(-1)?.seq ?? null)) continue;
     if (JSON.stringify(raw.session) !== JSON.stringify(surface.session)) continue;
     const session = { header: raw.session, inheritedEventCount: raw.inheritedEventCount, events: raw.events, surfaceEventSeqs: surface.events.map(event => event.seq) };
-    if (query.readTitleSnapshots) {
-      const titles = await query.readTitleSnapshots([id], signal);
-      const title = titles[0]?.title;
-      if (typeof title === 'string') session.title = title;
-      else if (typeof title?.text === 'string') session.title = title.text;
-    }
+    const title = raw.events.findLast(event => event.type === 'session/title')?.data?.title;
+    if (typeof title === 'string') session.title = title;
     validateBundle({ format: FORMAT, version: 1, sessions: [session] });
     return session;
   }
@@ -54,6 +50,7 @@ export function apply(ctx, config) {
     async handler(invocation) {
       let completed = 0;
       const jobs = [];
+      const errors = [];
       try {
         const input = invocation.rawInput.trim() || 'current';
         if (input === 'list') {
@@ -75,10 +72,17 @@ export function apply(ctx, config) {
         };
         for (const id of ids) {
           invocation.signal?.throwIfAborted();
-          batch.push(await captureSession(ctx.sessionQuery, id, invocation.signal));
+          try { batch.push(await captureSession(ctx.sessionQuery, id, invocation.signal)); }
+          catch (error) {
+            invocation.signal?.throwIfAborted();
+            if (input !== 'all') throw error;
+            errors.push(`${id}: ${error.message}`);
+            continue;
+          }
           if (batch.length >= size) await flush();
         }
         await flush();
+        if (errors.length) return { kind: 'error', text: `已接收 ${completed} 个会话；${errors.length} 个读取失败，可修复后重试。\n${jobs.join('\n')}\n${errors.join('\n')}` };
         return { kind: 'success', text: `已接收 ${completed} 个会话的完整事件日志（含压缩前历史）。\n${jobs.join('\n')}` };
       } catch (error) {
         return { kind: 'error', text: `已完成 ${completed} 个会话；${error.message}\n${jobs.join('\n')}`.trim() };
