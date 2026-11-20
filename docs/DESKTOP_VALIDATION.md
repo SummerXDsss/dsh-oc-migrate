@@ -141,3 +141,16 @@
 - 本地 macOS arm64 应用打包与 codesign 校验通过。功能提交 fb6b51e 已推送；该次 GitHub Actions 44729080125 的 jobs 未启动，GitHub 注释为账户计费或额度问题，并非已运行后测试失败；不将此状态标成 CI 通过。
 
 本地命令日志、目标原生导出与截图：`artifacts/direction-20261120/`。
+
+## 0.5.5 Windows 与普通 Linux
+
+- 自动发现补齐 Windows 2.x 桌面暂存 CLI、旧 GUI、resources、npm 与 PATH 脚本入口，以及 Linux XDG 暂存目录与常见发行包 resources 路径。DSH_HOME 遵循官方目录规则；Windows 短暂占用采用有限退避的原子替换，不先删除旧目标。Linux 离线进程检查使用通用 procps 参数。
+- 本机 macOS：84 项单测通过，Linux 专属启动器测试跳过 1 项；语法、Web 构建、插件打包回归、Tauri/Rust 检查通过。真实 OpenCode 1.18.31 / 2.3.2 的 9 项回归通过，包含编译 sidecar、双向扫描/选择、标题/项目名、官方 DSH 编解码、冷标题缓存、CLI/HTTP 回读与回滚。
+- Linux：Debian 12、glibc 2.36、Node 24.22.3 的 linux/amd64 容器实际运行 85 项单测和 9 项真实双版本回归，全部通过。容器在 arm64 Mac 的 OrbStack 上通过架构翻译执行 x86_64 程序，不是 Linux 桌面窗口验收。工具与项目测试路径包含中文和空格；同时实际执行无 FUSE 启动器参数保留测试。
+- 另以普通用户 uid=1000 重跑 Linux 的 85 项单测、语法、Web 构建和插件打包；两项编译 sidecar 原生回归分别连接 1.x / 2.x，实际完成正反向一键迁移、原生回读、重试与回滚，全部通过，不依赖 root 写入权限。
+- 两个 baseline sidecar 已实际交叉编译：Linux 为 x86_64 ELF，Windows 为 x86_64 PE32+。Windows 路径/入口/占用重试逻辑通过可注入平台测试；PE 文件产出不等于 Windows 原生运行或 GUI 验收。
+- CI 新增 Windows 2022 / Ubuntu 22.04、Node 22/24 与真实双版本回归。NSIS 当前用户安装并内嵌 WebView2 引导程序；Linux 增加 RPM 和无 FUSE 启动脚本。Release 需六份安装包与全部回归成功才发布。
+- 功能提交 `9a4c4f7` 的 [Test CI](https://github.com/SummerXDsss/dsh-oc-migrate/actions/runs/44733509690) 因 GitHub 账户付款/支出额度问题未启动 jobs；不是 Windows 测试已通过。当前没有据此发布六份新安装包，也没有宣称 Windows/Linux GUI 真机窗口点验完成。
+- 独立源码副本逆向补丁回滚后，91 个基线文件逐字节恢复，新增文件移除，CLI 恢复 0.5.4，原有 73 项测试通过；工作目录保持 0.5.5。完整命令与本地证据位于 `artifacts/platforms-20261120/`，不包含实际聊天原件。
+
+平台安装与支持范围见 [PLATFORMS.md](./PLATFORMS.md)。
