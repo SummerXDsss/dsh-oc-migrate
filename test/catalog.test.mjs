@@ -15,6 +15,7 @@ async function setup(t, direction = 'dsh-to-oc') {
   async function add(id, project = 'ALPHA', compact = false) {
     const directory = path.join(home, project); await mkdir(directory, { recursive: true });
     const s = fixture({ id, compact }).sessions[0]; s.header.cwd = directory; s.title = `中文 ${id}`;
+    s.events.push({seq:s.events.length,time:s.header.createdAt+100,type:'session/title',data:{title:s.title,messageSeqs:[],source:{kind:'user'}}});
     const file = path.join(home, '.dsh/sessions', project, id, 'session.v4.jsonl'); await mkdir(path.dirname(file), { recursive: true });
     const bytes = Buffer.from([{ type: 'session', ...s.header }, ...s.events].map(x => JSON.stringify(x)).join('\n') + '\n');
     await writeFile(file, bytes);
@@ -32,6 +33,7 @@ test('先扫描：项目分组、分页全文预览、本地名称/收藏、持�
   assert.equal((await app.snapshot()).jobs.length, 0); assert.equal(client.sessions.size, 0);
   assert(events.some(e => e.type === 'catalog-progress' && e.finished === 3));
   const e = catalog.entries.find(e => e.sourceID === '压缩对话');
+  assert.equal(e.title, '中文 压缩对话');
   const preview = await app.request('catalogPreview', { scanID: catalog.id, id: e.id });
   assert.match(JSON.stringify(preview), /先核对已有文件/); assert.match(JSON.stringify(preview), /原始文件内容/); assert(preview.messages.some(m => !m.active));
   assert.equal((await app.request('catalogPreview', { scanID: catalog.id, id: e.id, offset: 1, limit: 1 })).messages.length, 1);
@@ -83,7 +85,7 @@ test('管理器模板：搜索/收藏/项目组合筛选，分页保留全局选
   const output = transpileModule(source, { compilerOptions: { module: ModuleKind.ES2022 } }).outputText;
   const { catalogHTML, newCatalogView, filteredEntries } = await import('data:text/javascript;base64,' + Buffer.from(output).toString('base64'));
   const c = { id: 'scan', direction: 'dsh-to-oc', input: {}, scannedAt: '2026-11-20T00:00:00Z', plan: { target: {version:'fixture'} }, errors: [], projects: [{id:'A',name:'项目甲',directory:'/A',count:45},{id:'B',name:'项目乙',directory:'/B',count:1}], entries: Array.from({length:46},(_,i)=>({id:String(i),sourceID:'s'+i,title:i===0?'<script>alert(1)</script>':'中文对话'+i,directory:i===45?'/B':'/A',projectID:i===45?'B':'A',starred:i===0,messageCount:3,updated:i})) };
-  const v=newCatalogView();v.project='A';v.onlyStarred=true;
+  const v=newCatalogView();c.projects[0].alias='项目别名';v.query='项目别名';assert.equal(filteredEntries(c,v).length,45);v.query='';v.project='A';v.onlyStarred=true;
   assert.equal(filteredEntries(c,v).length,1);v.query='中文';assert.equal(filteredEntries(c,v).length,0);
   v.query='';v.onlyStarred=false;v.selected.add('45');
   let html=catalogHTML(c,v);assert.equal((html.match(/data-catalog-select=/g)||[]).length,40);assert.match(html,/已选 1 个对话/);assert.match(html,/1 \/ 2/);
@@ -91,4 +93,19 @@ test('管理器模板：搜索/收藏/项目组合筛选，分页保留全局选
   v.focused='0';v.preview={id:'0',offset:0,total:1,messages:[{role:'assistant',active:false,text:'<img src=x onerror=alert(1)>'}]};
   html=catalogHTML(c,v);assert.match(html,/&lt;img/);assert.match(html,/已被替换 · 全文保留/);assert.match(html,/不改源标题/);
   assert.match(catalogHTML(c,v,true),/data-action="startSelected" disabled/);
+});
+
+test('同一项目的符号链接路径合并；长消息预览截断有标识，原件不截断', async t => {
+  const { app, add, home } = await setup(t);
+  const first = await add('甲','ALPHA'); const second = await add('乙','BETA');
+  const { symlink } = await import('node:fs/promises'); const alias = path.join(home,'ALPHA-LINK');
+  await symlink(path.join(home,'ALPHA'),alias,'dir');
+  const rows=(await readFile(second.file,'utf8')).trim().split('\n').map(JSON.parse);rows[0].cwd=alias;rows.find(e=>e.type==='user/message').data.content[0].text='长'.repeat(15000);
+  await writeFile(second.file,rows.map(x=>JSON.stringify(x)).join('\n')+'\n');
+  const c=await app.request('scanCatalog');assert.equal(c.projects.length,1);assert.equal(c.projects[0].count,2);
+  const e=c.entries.find(e=>e.sourceID==='乙');
+  const p=await app.request('catalogPreview',{scanID:c.id,id:e.id,offset:1,limit:1});assert.equal(p.total,4);assert.equal(p.messages[0].text.length,12000);assert.equal(p.messages[0].truncated,true);
+  assert.match(await readFile(second.file,'utf8'),new RegExp('长'.repeat(15000)));
+  for(const args of [{offset:-1},{limit:0},{limit:51}])await assert.rejects(app.request('catalogPreview',{scanID:c.id,id:e.id,...args}),/分页参数无效/);
+  assert.deepEqual(await readFile(first.file),first.bytes);
 });

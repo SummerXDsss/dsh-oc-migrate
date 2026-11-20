@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { readFile } from 'node:fs/promises';
+import { readFile, realpath } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { atomicJSON } from '../../middleware/src/store.mjs';
 import { digest } from '../../core/src/protocol.mjs';
@@ -60,13 +60,15 @@ export class ConversationCatalog {
             created: transcript.info.time?.created ?? 0, updated: transcript.info.time?.updated ?? 0, messageCount: transcript.messages.length,
             parentID: transcript.info.parentID ?? null, archived: !!transcript.info.time?.archived, fingerprint: digest(transcript), source: { id: item.id } };
         }
-        entries.push({ ...entry, id: digest({ origin, source: direction === 'dsh-to-oc' ? item.file : item.id }), projectID: digest({ direction, directory: entry.directory }) });
+        let projectDirectory = entry.directory;
+        if (path.isAbsolute(projectDirectory)) { try { projectDirectory = await realpath(projectDirectory); } catch { projectDirectory = path.normalize(projectDirectory); } }
+        entries.push({ ...entry, projectDirectory, id: digest({ origin, source: direction === 'dsh-to-oc' ? item.file : item.id }), projectID: digest({ direction, directory: projectDirectory }) });
       } catch (error) { errors.push({ file: item.file ?? item.id, error: error.message }); }
       finished++; progress();
     }
     const projects = new Map();
     for (const entry of entries) {
-      if (!projects.has(entry.projectID)) projects.set(entry.projectID, { id: entry.projectID, directory: entry.directory, name: entry.directory ? path.basename(entry.directory) || entry.directory : '未关联项目', count: 0 });
+      if (!projects.has(entry.projectID)) projects.set(entry.projectID, { id: entry.projectID, directory: entry.projectDirectory, name: entry.projectDirectory ? path.basename(entry.projectDirectory) || entry.projectDirectory : '未关联项目', count: 0 });
       projects.get(entry.projectID).count++;
     }
     const { sessions: _, ...summary } = plan;
