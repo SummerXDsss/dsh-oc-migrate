@@ -5,7 +5,7 @@
 ## 格式由各自源码决定
 
 - [DSH 消息与内容块](https://github.com/deepseek-ai/deepseek-harness/tree/2e39e70496aa02986ca6a820c5d497e816b69d7e/packages/llm/llm/src/types.ts)：日志事件与有效 surface 分开，工具结果是独立消息；工具参数为原始 JSON 字符串，图片/文件是 attachmentId 引用，不等于图片/文件字节。
-- [OpenCode 1.x 消息](https://github.com/anomalyco/opencode/blob/v1.18.31/packages/schema/src/session-v1.ts)：`{ info, parts }`，工具结果放在 tool part 的 state 中。
+- [OpenCode 1.x 消息](https://github.com/anomalyco/opencode/blob/v1.18.31/packages/schema/src/v1/session.ts)：`{ info, parts }`，工具结果放在 tool part 的 state 中。
 - [OpenCode 2.x 消息](https://github.com/anomalyco/opencode/blob/v2.3.2/packages/schema/src/session-message.ts)：用户为 `text/files/agents/skills`，助手为 `content`；工具结果为 `state.content`，不同于 1.x 的 `state.output`。
 - [2.x 附件](https://github.com/anomalyco/opencode/blob/v2.3.2/packages/schema/src/prompt.ts)：原生附件含 base64 `data`，或服务器媒体引用；不能把 DSH attachmentId 直接当 OpenCode URL 使用。
 - [2.x 工具内容](https://github.com/anomalyco/opencode/blob/v2.3.2/packages/schema/src/tool.ts)：text / file 两种内容块，不能只取第一段文字。
@@ -45,3 +45,5 @@
 原始 OpenCode export 若自带附件 data，迁移包和回程结构会保留这些字节，并能在返回 OpenCode 时恢复原生附件。**DSH 阶段尚未把这些字节写入 DSH 附件库**，因此在 DSH 内显示为有提示的历史快照，不能称为原生可点开图片。DSH 自身的 attachmentId、OpenCode `file:`/`media:` 外部引用不自动读取或下载；它们没有内嵌字节时，只保留引用及原始结构。此类转换会在任务 warnings 中明确展示。
 
 转换版本升级不会覆盖已迁入且正在使用的历史；再次主动迁移相同源会生成新版格式的独立会话，可单独核对和撤销。
+
+父子分支的源引用保存在 source.json / metadata 中；当目标父会话未映射时，以独立可读会话导入并提示，不伪造目标父 ID。当前不承诺跨客户端恢复完整分支图。

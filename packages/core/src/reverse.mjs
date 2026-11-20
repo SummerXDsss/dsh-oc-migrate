@@ -27,6 +27,7 @@ export function convertOpenCode(transcript, { revision: requested = REVERSE_CONV
     ...(typeof cwd === 'string' && path.isAbsolute(cwd) ? { cwd: path.normalize(cwd) } : {}) };
   const events = [], warnings = [], callIDs = new Set(), messageIDs = new Set();
   let time = createdAt, turn = 0, protectedHead = false;
+  if (transcript.info.parentID) warnings.push('源对话为分支：父会话引用保存在原件，DSH 目标作为独立可读会话，不伪造父子链接');
   function event(type, data, surface = false, originalTime = time) {
     const item = { seq: events.length, time: originalTime, type, data, ...(type === 'migration/opencode-message' ? { ignorable: true } : {}), ...(surface ? { surfaceOp: 'append' } : {}) };
     events.push(item); return item;
@@ -107,7 +108,7 @@ export function convertOpenCode(transcript, { revision: requested = REVERSE_CONV
       const model = { provider: info.providerID ?? info.model?.providerID ?? 'opencode', model: info.modelID ?? info.model?.id ?? 'historical' };
       if (info.error) content.push(textBlock(`[OpenCode 响应错误]\n${json(info.error)}`));
       const usage = toDshUsage(info.tokens);
-      event('assistant/message', { turn, step, message: identify({ role: 'assistant', source: { kind: 'model', ...model }, content }, index), stream: [], ...(usage ? { usage } : {}), ...(info.error || info.finish === 'error' ? { interrupted: true } : {}) }, true);
+      event('assistant/message', { turn, step, message: identify({ role: 'assistant', source: { kind: 'model', ...model }, content }, index), stream: [], ...(usage ? { usage } : {}), ...(info.error || info.finish === 'error' || info.time?.completed === undefined ? { interrupted: true } : {}) }, true);
       for (const { part, state, callId, name, args } of tools) {
         const toolTime = millis(part.time?.completed ?? state.time?.end, time);
         event('tool/call', { turn, step, callId, name, arguments: args }, false, millis(part.time?.created ?? state.time?.start, time));

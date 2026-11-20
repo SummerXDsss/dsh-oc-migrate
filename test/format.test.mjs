@@ -128,3 +128,12 @@ test('有回程结构的未完成原生工具也不会被恢复成 running/pendi
     assert.ok(out.transcript.messages.flatMap(m=>m.parts??m.content??[]).filter(p=>p.type==='tool').every(p=>['completed','error'].includes(p.state.status)));
   }
 });
+
+test('回读校验同时覆盖 1.x 工具元数据和时间；桥接不复活未完成响应',()=>{
+  const expected=convertBundle(fixture(),{directory:'/tmp/format-project',generation:'v1'})[0].transcript;
+  const tool=expected.messages.find(m=>m.info.role==='assistant').parts.find(p=>p.type==='tool'); tool.state.metadata.diff='原始 diff';
+  const changed=structuredClone(expected);changed.messages.find(m=>m.info.role==='assistant').parts.find(p=>p.type==='tool').state.metadata.diff='被改变';
+  assert.throws(()=>verifyTranscript(expected,changed),/回读不匹配/);
+  const timing=structuredClone(expected);timing.messages.find(m=>m.info.role==='assistant').info.time.completed++;
+  assert.throws(()=>verifyTranscript(expected,timing),/回读不匹配/);
+});

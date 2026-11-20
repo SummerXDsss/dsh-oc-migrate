@@ -49,6 +49,7 @@ function convertSession(source, options) {
   const revision = digest({ converter: CONVERTER_REVISION, header: source.header, title: sourceTitle, inheritedEventCount: source.inheritedEventCount ?? 0, events, formats: source.events.filter(event => event.type === 'migration/opencode-message').map(event => event.data), states: [...states.values()], directory, generation, target, archive: !!options.archive });
   const sessionID = `ses_${revision.slice(0, 26)}`;
   const warnings = [];
+  if (source.header.parentSession) warnings.push('源对话为分支：父会话引用保存在原件/metadata，目标作为独立可读会话，不伪造父子链接');
   // 先配对结果再转换 assistant；不把 tool/result 重复写成用户消息。
   const results = new Map();
   for (const event of events.filter(event => !options.archive && event.type === 'tool/result')) {
