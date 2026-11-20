@@ -44,3 +44,5 @@ npm run desktop:build
 - 工作流不上传应用数据、用户导出历史或令牌。macOS 使用 ad-hoc 签名并验证 bundle 完整性，尚未配置 Developer ID 公证；Windows 未配置开发者证书。当前不包含自动更新服务。
 
 侧车集成采用 Tauri 官方 [externalBin / sidecar](https://v2.tauri.app/develop/sidecar/) 机制；发布矩阵参照 [GitHub pipeline](https://v2.tauri.app/distribute/pipelines/github/) 文档。
+
+实机窗口操作与自动回归结果见 [桌面验收记录](DESKTOP_VALIDATION.md)。

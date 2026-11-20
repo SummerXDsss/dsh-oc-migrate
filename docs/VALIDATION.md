@@ -26,7 +26,7 @@ npm run test:integration
 
 CI 固定安装 `opencode-ai@1.18.31` 和 `@opencode/cli@2.3.2`，在 Linux 上重复原生回归。兼容 1.x/2.x 是两条版本适配路径，不等于每个历史小版本都经过验证；较老版本应先运行对应回归。
 
-本地最新一轮：24 项单元/接收链路测试 + 3 项真实二进制/服务器测试均通过，0 skipped。Linux 原生 CI 已在 [a656109 对应运行](https://github.com/SummerXDsss/dsh-oc-migrate/actions/runs/44658267226) 通过；每批后续提交继续执行相同回归。
+CLI 初版为 24 项单元/接收链路测试 + 3 项真实二进制/服务器测试。Tauri 版新增桌面服务、编译 sidecar 和发布归集验证，现为 29 项单元测试 + 5 项真实集成测试，均通过，0 skipped；真实迁移应用窗口点验见 [桌面验收记录](DESKTOP_VALIDATION.md)。Linux 原生 CI 已在 [a656109 对应运行](https://github.com/SummerXDsss/dsh-oc-migrate/actions/runs/44658267226) 通过；每批后续提交继续执行回归。
 
 ## 回归发现与修正
 
