@@ -1,9 +1,10 @@
 import path from 'node:path';
 import { dshLabel } from './labels.mjs';
+import { attachDshEnvelope, nativeBridge } from './message-format.mjs';
 import { digest, validateBundle, SURFACE_TYPES } from './protocol.mjs';
 
 // Version both the converted session IDs and middleware jobs when projection changes.
-export const CONVERTER_REVISION = 'dsh-to-oc-readable-tools-v2';
+export const CONVERTER_REVISION = 'dsh-to-oc-format-v3';
 
 const zeros = () => ({ input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } });
 function usage(value = {}) {
@@ -44,7 +45,7 @@ function convertSession(source, options) {
   const states = new Map();
   if (options.stateSnapshots !== false) for (const event of source.events) if (/^(todo|goal)[/]/.test(event.type)) states.set(event.type.split('/')[0], event);
   // /oc-migrate 本身也会记 command/run/done；仅原始审计尾巴变化不应复制聊天。
-  const revision = digest({ converter: CONVERTER_REVISION, header: source.header, title: sourceTitle, inheritedEventCount: source.inheritedEventCount ?? 0, events, states: [...states.values()], directory, generation, target, archive: !!options.archive });
+  const revision = digest({ converter: CONVERTER_REVISION, header: source.header, title: sourceTitle, inheritedEventCount: source.inheritedEventCount ?? 0, events, formats: source.events.filter(event => event.type === 'migration/opencode-message').map(event => event.data), states: [...states.values()], directory, generation, target, archive: !!options.archive });
   const sessionID = `ses_${revision.slice(0, 26)}`;
   const warnings = [];
   // 先配对结果再转换 assistant；不把 tool/result 重复写成用户消息。
@@ -54,22 +55,31 @@ function convertSession(source, options) {
     if (results.has(id)) throw new Error(`重复工具结果：${id}`);
     results.set(id, event);
   }
-  const consumed = new Set(), records = [];
+  const bridges = new Map();
+  if (!options.archive && !options.provider && !options.model) for (const event of source.events) {
+    const bridge = nativeBridge(source, event, generation);
+    if (bridge) bridges.set(bridge.seqs[0], bridge);
+  }
+  const skipped = new Set(), consumed = new Set(), records = [];
   let parentID, outputTime = source.header.createdAt;
   const makeID = (prefix, index) => `${prefix}_${source.header.createdAt.toString(16).padStart(12, '0')}${index.toString(16).padStart(6, '0')}${revision.slice(0, 12)}`;
   function add(role, parts, event, model = target) {
+    const interrupted = !!event.data.interrupted;
+    if (interrupted) warnings.push(`事件 #${event.seq} 为中断响应，已保留中断标记`);
+    const terminal = event.data.stream?.findLast(entry => entry.chunk?.type === 'finish')?.chunk.reason;
+    const finish = interrupted || ['aborted', 'error'].includes(terminal?.kind) ? 'error' : terminal?.kind === 'max-tokens' ? 'length' : parts.some(p => p.type === 'tool') ? 'tool-calls' : 'stop';
     // surface 替换可以把较晚的事件插回较早位置；保持显示时间非递减，原时间另存。
     const index = records.length, id = makeID('msg', index), time = Math.max(outputTime, event.time);
     outputTime = time;
     const metadata = { dsh: { sessionID: source.header.id, eventSeq: event.seq, eventType: event.type, originalTime: event.time } };
     if (generation === 'v1') {
       const info = role === 'assistant'
-        ? { id, sessionID, role, parentID, time: { created: time, completed: time }, modelID: model.modelID, providerID: model.providerID, agent: 'build', mode: 'build', path: { cwd: directory, root: directory }, cost: 0, tokens: usage(event.data.usage), finish: 'stop' }
+        ? { id, sessionID, role, parentID, time: { created: time, completed: time }, modelID: model.modelID, providerID: model.providerID, agent: 'build', mode: 'build', path: { cwd: directory, root: directory }, cost: 0, tokens: usage(event.data.usage), finish }
         : { id, sessionID, role: 'user', time: { created: time }, agent: 'build', model: target };
       const mapped = parts.map((part, pi) => {
         const base = { id: makeID('prt', index * 100000 + pi), sessionID, messageID: id, metadata };
         if (part.type === 'reasoning') return { ...base, type: 'reasoning', text: part.text, time: { start: time, end: time } };
-        if (part.type !== 'tool') return { ...base, type: 'text', text: part.text };
+        if (part.type !== 'tool') return { ...base, type: 'text', text: part.text, ...(part.snapshot ? { metadata: { ...metadata, dshToolSnapshot: digest(part.text) } } : {}) };
         const state = { input: part.input, metadata: { dshHistorical: true }, time: { start: time, end: Math.max(time, part.time) } };
         return { ...base, type: 'tool', callID: part.id, tool: part.name, state: part.error
           ? { ...state, status: 'error', error: part.output }
@@ -79,17 +89,42 @@ function convertSession(source, options) {
     } else {
       const base = { id, type: role, time: { created: time }, metadata };
       if (role !== 'assistant') records.push({ ...base, type: 'user', text: parts.map(part => part.text).join('\n') });
-      else records.push({ ...base, agent: 'build', model: { providerID: model.providerID, id: model.modelID }, time: { created: time, completed: time }, finish: 'stop', cost: 0, tokens: usage(event.data.usage), content: parts.map(part => {
+      else records.push({ ...base, agent: 'build', model: { providerID: model.providerID, id: model.modelID }, time: { created: time, completed: time }, finish, cost: 0, tokens: usage(event.data.usage), content: parts.map(part => {
         if (part.type !== 'tool') return { type: part.type, text: part.text };
-        const content = [{ type: 'text', text: part.output || '(工具返回空结果)' }];
+        const content = [{ type: 'text', text: part.output }];
         return { type: 'tool', id: part.id, name: part.name, executed: true, time: { created: time, completed: Math.max(time, part.time) }, state: part.error
           ? { status: 'error', input: part.input, error: { type: 'dsh-historical', message: part.output }, content }
           : { status: 'completed', input: part.input, content } };
       }) });
     }
+    const record = records.at(-1);
+    if (generation === 'v2') record.metadata.dsh.snapshots = parts.flatMap((part, index) => part.snapshot ? [{ index, hash: digest(part.text) }] : []);
+    // Only genuine source messages get an envelope, never archive/state helpers.
+    if (!options.archive && ['user/message', 'system/message', 'assistant/message'].includes(event.type)) {
+      const toolResults = parts.filter(p => p.type === 'tool').map(p => results.get(p.id)).filter(Boolean).map(e => ({ type: e.type, time: e.time, data: e.data }));
+      attachDshEnvelope(record, event, toolResults);
+    }
     if (role !== 'assistant') parentID = id;
   }
   for (const event of events) {
+    if (skipped.has(event.seq)) continue;
+    const bridge = bridges.get(event.seq);
+    if (bridge) {
+      const record = structuredClone(bridge.record), index = records.length, id = makeID('msg', index);
+      if (generation === 'v1') {
+        record.info.id = id; record.info.sessionID = sessionID;
+        if (record.info.role === 'assistant') { record.info.parentID = parentID; record.info.path = { cwd: directory, root: directory }; }
+        else parentID = id;
+        record.parts.forEach((part, pi) => Object.assign(part, { id: makeID('prt', index * 100000 + pi), sessionID, messageID: id }));
+      } else record.id = id;
+      for (const e of bridge.events) {
+        skipped.add(e.seq);
+        if (e.type === 'assistant/message') for (const block of e.data.message.content) if (block.type === 'tool-call') consumed.add(block.id);
+      }
+      records.push(record);
+      outputTime = Math.max(outputTime, (record.info ?? record).time.created);
+      continue;
+    }
     if (options.archive) {
       const message = event.type === 'user/message' ? event.data : event.data.message;
       const prefix = `[DSH 原始事件 #${event.seq} ${event.type}；${source.surfaceEventSeqs.includes(event.seq) ? '当前有效' : '已被替换'}]\n`;
@@ -102,12 +137,14 @@ function convertSession(source, options) {
     const message = event.type === 'user/message' ? event.data : event.data.message;
     if (event.type !== 'assistant/message') {
       const content = textContent(message.content);
-      if (!content) continue;
+      if (!content && !message.content.length) warnings.push(`事件 #${event.seq} 为空消息，已保留空正文`);
+      if (message.content.some(block => !['text'].includes(block.type))) warnings.push(`事件 #${event.seq} 的非文字用户/上下文块已保留原始结构与文字快照；附件字节未复制`);
+      if (event.type !== 'user/message') warnings.push(`事件 #${event.seq} 的 ${message.role ?? event.type} 角色保存为历史上下文快照，不替代目标系统配置`);
       const prefix = event.type === 'user/message' ? '' : `[DSH 历史 ${message.role ?? event.type} 上下文快照；非 OpenCode 系统配置]\n`;
       add('user', [{ type: 'text', text: prefix + content }], event);
       continue;
     }
-    if (!parentID) add('user', [{ type: 'text', text: '[DSH 迁移：原始截面没有前置用户消息，以下为历史响应。]' }], event);
+    if (generation === 'v1' && !parentID) { warnings.push('原始截面没有前置用户消息，1.x 添加历史说明以满足 parentID'); add('user', [{ type: 'text', text: '[DSH 迁移：原始截面没有前置用户消息，以下为历史响应。]' }], { ...event, type: 'migration/synthetic' }); }
     const parts = message.content.map(block => {
       if (block.type === 'text' || block.type === 'reasoning') return { type: block.type, text: block.text };
       if (block.type !== 'tool-call') {
@@ -126,7 +163,7 @@ function convertSession(source, options) {
     // Retain native completed/error tool parts AND a readable historical copy.
     // This is imported content, not a tool execution or a new model response.
     const readable = parts.flatMap(part => part.type !== 'tool' ? [part] : [part, {
-      type: 'text', text: `[DSH 历史工具快照 · ${part.name} · ${part.id} · ${part.error ? '错误/中断' : '已完成'}；未重新执行]\n参数：\n${JSON.stringify(part.input, null, 2)}\n结果：\n${part.output || '(工具返回空结果)'}`,
+      type: 'text', snapshot: true, text: `[DSH 历史工具快照 · ${part.name} · ${part.id} · ${part.error ? '错误/中断' : '已完成'}；未重新执行]\n参数：\n${JSON.stringify(part.input, null, 2)}\n结果：\n${part.output || '(工具返回空结果)'}`,
     }]);
     add('assistant', readable, event, model);
   }

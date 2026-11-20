@@ -107,3 +107,21 @@ test('DSH 不混写两种编码，也不绕过旧代编码冲突', async t => {
   await writeFile(path.join(path.dirname(report.sessions[0].file), 'session.v3.jsonl'), 'older generation');
   await assert.rejects(detectDshEncoding(path.join(root, 'sessions')), /混用/);
 });
+
+test('0.5.7 及以前的反向任务按原转换版本重试/撤销，不用新版重算旧路径',async t=>{
+  const {root,store}=await setup(t);
+  const {convertOpenCode:old}=await import('../packages/core/src/reverse-legacy.mjs');
+  const {digest}=await import('../packages/core/src/protocol.mjs');
+  const {atomicJSON}=await import('../packages/middleware/src/store.mjs');
+  const transcript=makeTranscript('v2'), item=old(transcript), sourceHash=digest(transcript);
+  await mkdir(store.config.dshRoot,{recursive:true});
+  const dshRoot=await (await import('node:fs/promises')).realpath(store.config.dshRoot);
+  const id=digest({direction:'oc-to-dsh',writer:1,revision:item.revision,sourceHash,dshRoot,encoding:'none'}),dir=store.jobPath(id);
+  const file=path.join(dshRoot,dshProjectKey(item.session.header.cwd),item.sessionID,'session.v4.jsonl');
+  await mkdir(dir,{recursive:true}); await atomicJSON(path.join(dir,'source.json'),transcript); await writeFile(path.join(dir,'session.log'),item.bytes);
+  await atomicJSON(path.join(dir,'report.json'),{id,direction:'oc-to-dsh',generation:'dsh-v4',status:'received',sourceHash,destination:dshRoot,encoding:'none',sessions:[{sourceID:item.sourceID,sessionID:item.sessionID,directory:item.session.header.cwd,file,hash:digest(item.bytes),status:'pending'}]});
+  const first=await store.import(id); assert.equal(first.status,'imported',first.error); assert.deepEqual(await readFile(file),item.bytes);
+  assert.equal((await store.rollback(id)).status,'rolled-back');
+  assert.equal((await store.import(id)).status,'imported');
+  assert.equal((await store.rollback(id)).status,'rolled-back');
+});

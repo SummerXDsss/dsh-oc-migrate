@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { executeToFile as execute } from './process.mjs';
 import { resolveCliBinary } from './discovery.mjs';
 import { canonical, digest } from '../../core/src/protocol.mjs';
+import { messageShape } from '../../core/src/message-format.mjs';
 
 // 1.x has no `api` subcommand. Use its supported loopback HTTP API, not SQL writes.
 async function v1ProjectUpdate(binary, config, env, id, name, kind = 'project') {
@@ -27,14 +28,7 @@ async function v1ProjectUpdate(binary, config, env, id, name, kind = 'project') 
 }
 // 只比较历史正文；原生导入会重绑 project、directory 并重新计算会话统计。
 export function transcriptShape(transcript) {
-  return { id: transcript.info.id, title: transcript.info.title, messages: transcript.messages.map(message => message.info ? {
-    id: message.info.id, role: message.info.role,
-    parts: message.parts.map(part => part.type === 'tool'
-      ? { type: part.type, id: part.callID, name: part.tool, status: part.state.status, input: part.state.input, output: part.state.output ?? part.state.error }
-      : { type: part.type, text: part.text }),
-  } : { id: message.id, role: message.type, text: message.text, content: message.content?.map(part => part.type === 'tool'
-    ? { type: part.type, id: part.id, name: part.name, status: part.state.status, input: part.state.input, content: part.state.content, error: part.state.error }
-    : { type: part.type, text: part.text }) }) };
+  return { id: transcript.info.id, title: transcript.info.title, messages: transcript.messages.map(message => ({ id: (message.info ?? message).id, ...messageShape(message) })) };
 }
 export function verifyTranscript(expected, actual) {
   if (canonical(transcriptShape(expected)) !== canonical(transcriptShape(actual))) throw new Error(`会话 ${expected.info.id} 回读不匹配：请保留任务原件检查，未标记导入成功`);

@@ -3,7 +3,7 @@ import { zstdCompressSync } from 'node:zlib';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { MigrationStore, atomicJSON } from './store.mjs';
-import { convertOpenCode } from '../../core/src/reverse.mjs';
+import { convertOpenCode, LEGACY_REVERSE_REVISION } from '../../core/src/reverse.mjs';
 import { digest } from '../../core/src/protocol.mjs';
 import { captureLocalSession, findLocalSessions } from '../../plugin/src/local-reader.mjs';
 import { registerDshWorkspace, rollbackDshWorkspace, registerDshTitleCache, rollbackDshTitleCache, assertDshOffline } from './dsh-workspaces.mjs';
@@ -60,7 +60,7 @@ export class ReverseStore extends MigrationStore {
         await atomicJSON(path.join(dir, 'source.json'), transcript);
         await writeFile(path.join(dir, 'session.log'), bytes, { mode: 0o600, flag: 'wx' });
         report = { id, direction: 'oc-to-dsh', generation: 'dsh-v4', status: 'received', sourceHash, destination: dshRoot, encoding, createdAt: new Date().toISOString(),
-          sessions: [{ sourceID: item.sourceID, sessionID: item.sessionID, title: item.session.title, revision: item.revision, directory: item.session.header.cwd, file, hash: digest(bytes), warnings: item.warnings, status: 'pending' }] };
+          converterRevision: item.converterRevision, sessions: [{ sourceID: item.sourceID, sessionID: item.sessionID, title: item.session.title, revision: item.revision, directory: item.session.header.cwd, file, hash: digest(bytes), warnings: item.warnings, status: 'pending' }] };
         await atomicJSON(path.join(dir, 'report.json'), report);
       }
       return importNow ? this.importLocked(dir, report) : report;
@@ -69,7 +69,7 @@ export class ReverseStore extends MigrationStore {
   async expected(dir, report) {
     const source = JSON.parse(await readFile(path.join(dir, 'source.json'), 'utf8'));
     if (digest(source) !== report.sourceHash) throw new Error('OpenCode 原始备份校验不匹配');
-    const item = convertOpenCode(source);
+    const item = convertOpenCode(source, { revision: report.converterRevision ?? LEGACY_REVERSE_REVISION });
     const expectedFile = path.join(report.destination, dshProjectKey(item.session.header.cwd), item.sessionID, `session.v4.jsonl${report.encoding === 'zstd' ? '.zstd' : ''}`);
     if (report.sessions.length !== 1 || report.sessions[0].file !== expectedFile) throw new Error('DSH 任务目标路径校验不匹配');
     const bytes = await readFile(path.join(dir, 'session.log'));
@@ -106,7 +106,7 @@ export class ReverseStore extends MigrationStore {
       const captured = await captureLocalSession({ file: item.file });
       if (captured.session.header.id !== item.sessionID) throw new Error('DSH 原生日志回读 ID 不匹配');
       // Validate the disk representation with the DSH-owned codec again.
-      const original = convertOpenCode(JSON.parse(await readFile(path.join(dir, 'source.json'), 'utf8')));
+      const original = convertOpenCode(JSON.parse(await readFile(path.join(dir, 'source.json'), 'utf8')), { revision: report.converterRevision ?? LEGACY_REVERSE_REVISION });
       if (digest(captured.session.events) !== digest(original.session.events)) throw new Error('DSH 事件回读不匹配');
       report.titleCache = await registerDshTitleCache(dir, report, original.session);
       report.workspace = await registerDshWorkspace(dir, report, source.migrationProject);
