@@ -21,6 +21,8 @@ for (const target of targets) {
     t.after(() => child.kill());
     const lines = readline.createInterface({ input: child.stdout });
     const pending = new Map(); let sequence = 0;
+    child.on('error', error => { for (const handler of pending.values()) handler.reject(error); pending.clear(); });
+    child.on('exit', code => { for (const handler of pending.values()) handler.reject(new Error(`sidecar exited ${code}: ${error}`)); pending.clear(); });
     lines.on('line', line => {
       const message = JSON.parse(line);
       if (message.kind !== 'response') return;
@@ -57,10 +59,30 @@ for (const target of targets) {
     assert.equal(quick.status, 'completed', JSON.stringify(quick.errors)); assert.equal(quick.imported, 1); assert.equal(quick.nativeSessions, 2);
     const quickReport = (await rpc('snapshot')).jobs.find(job => job.id === quick.jobs[0].id);
     for (const item of quickReport.sessions) assert.equal((await client.export(item.sessionID)).info.id, item.sessionID);
+    // Reverse the same real, compiled-sidecar-created OpenCode history into a
+    // separate native DSH root, without disturbing the physical source fixture.
+    const dshRoot = path.join(root, 'reverse-dsh');
+    await rpc('startQuick', { direction: 'oc-to-dsh', binary: target.binary, dshRoot });
+    let reverse;
+    for (let attempt = 0; attempt < 180; attempt++) {
+      reverse = (await rpc('snapshot')).quick;
+      if (reverse.status !== 'running') break;
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    assert.equal(reverse.status, 'completed', JSON.stringify(reverse.errors));
+    assert.equal(reverse.imported, 2); assert.equal(reverse.nativeSessions, 2);
+    for (const job of reverse.jobs) {
+      const receipt = (await rpc('snapshot')).jobs.find(j => j.id === job.id);
+      assert.equal(receipt.direction, 'oc-to-dsh');
+      const { captureLocalSession } = await import('../../packages/plugin/src/local-reader.mjs');
+      const { session } = await captureLocalSession({ file: receipt.sessions[0].file });
+      assert.ok(session.events.length); assert.equal(session.header.cwd, receipt.sessions[0].directory);
+      assert.equal((await rpc('rollback', { id: job.id })).status, 'rolled-back');
+    }
     assert.equal((await rpc('rollback', { id: quickReport.id })).status, 'rolled-back');
     for (const item of quickReport.sessions) assert.equal(await client.export(item.sessionID), null);
     child.stdin.end();
     const code = await new Promise(resolve => child.on('exit', resolve)); assert.equal(code, 0, error);
-    t.diagnostic(`sidecar=${compiled ? 'compiled Bun' : 'Node'}; ${target.generation} import=PASS; native export=PASS; retry=PASS; rollback=PASS; one-click physical Zstd import/export/rollback=PASS; exit=0`);
+    t.diagnostic(`sidecar=${compiled ? 'compiled Bun' : 'Node'}; ${target.generation} import=PASS; native export=PASS; retry=PASS; rollback=PASS; one-click physical Zstd import/export/rollback=PASS; reverse one-click=PASS; exit=0`);
   });
 }

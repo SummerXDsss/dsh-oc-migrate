@@ -8,6 +8,8 @@ import { convertBundle } from '../packages/core/src/convert.mjs';
 import { fixture } from './fixture.mjs';
 import { ReverseStore, detectDshEncoding, dshProjectKey } from '../packages/middleware/src/reverse.mjs';
 import { listSessionPages } from '../packages/opencode-client/src/index.mjs';
+import { decodeZstdFrames } from '../packages/plugin/src/local-reader.mjs';
+import { zstdDecompressSync } from 'node:zlib';
 import { captureLocalSession } from '../packages/plugin/src/local-reader.mjs';
 import { DesktopService } from '../packages/desktop/src/service.mjs';
 const makeTranscript = generation => convertBundle(fixture(), { generation, directory: '/tmp/迁移项目' })[0].transcript;
@@ -29,7 +31,14 @@ for (const generation of ['v1', 'v2']) test(`${generation} → DSH 原生 v4：�
 test('反向原件、幂等导入、回滚、重试和明文/压缩编码', async t => {
   const { root, store } = await setup(t), transcript = makeTranscript('v2');
   const first = await store.receive(transcript, { importNow: true }); assert.equal(first.status, 'imported', first.error);
-  assert.equal(first.encoding, 'zstd'); assert.ok((await readFile(first.sessions[0].file)).length);
+  assert.equal(first.encoding, 'zstd');
+  const compressed = await readFile(first.sessions[0].file);
+  assert.ok(compressed.length);
+  // Node stops at the first frame: it must be a single parseable header row.
+  const firstFrame = zstdDecompressSync(compressed).toString('utf8');
+  assert.equal(JSON.parse(firstFrame).type, 'session');
+  assert.equal(firstFrame.split('\n').length, 2);
+  assert.ok(decodeZstdFrames(compressed).includes(Buffer.from('原始文件内容')));
   const read = await captureLocalSession({ file: first.sessions[0].file }); assert.equal(read.session.header.id, first.sessions[0].sessionID);
   assert.deepEqual(JSON.parse(await readFile(path.join(store.jobPath(first.id), 'source.json'), 'utf8')), transcript);
   assert.equal((await store.receive(transcript, { importNow: true })).id, first.id);
@@ -79,4 +88,17 @@ test('桌面反向一键：全部项目、导出变化保护、记录重开及�
   await service.request('startQuick', { direction: 'oc-to-dsh' }); await service.quick.done;
   assert.equal(service.quick.current.status, 'partial'); assert.equal(service.quick.current.imported, 0);
   assert.equal(service.quick.current.errors.length, 2);
+});
+
+test('Bun 编译仅嵌入 DSH 包版本；依赖表达式漂移时阻止发布', async () => {
+  const { embedDshVersion } = await import('../scripts/bun-compat.mjs');
+  const input = 'const { version } = createRequire(import.meta.url)("../package.json");';
+  assert.equal(embedDshVersion(input, '0.2.1-rc.2'), 'const { version } = {"version":"0.2.1-rc.2"};');
+  assert.throws(() => embedDshVersion('changed upstream', '0.2.1-rc.2'));
+});
+
+test('DSH 不混写两种编码，也不绕过旧代编码冲突', async t => {
+  const { root, store } = await setup(t), report = await store.receive(makeTranscript('v1'), { importNow: true });
+  await writeFile(path.join(path.dirname(report.sessions[0].file), 'session.v3.jsonl'), 'older generation');
+  await assert.rejects(detectDshEncoding(path.join(root, 'sessions')), /混用/);
 });

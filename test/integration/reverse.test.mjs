@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { createCliClient } from '../../packages/opencode-client/src/index.mjs';
 import { MigrationStore } from '../../packages/middleware/src/store.mjs';
@@ -30,12 +31,29 @@ for (const [generation, binary] of [['v1', process.env.OPENCODE_V1_BIN], ['v2', 
     const child = convertBundle(childSource, { generation, directory: sources[0].directory })[0].transcript;
     child.info.parentID = parent;
     const childFile = path.join(root, 'child.json'); await atomicJSON(childFile, child); await client.import(childFile, child);
-    const all = await client.listAll(); assert.equal(all.length, 3); // Not limited to alpha's project.
+    const all = await client.listAll({ pageSize: 1 }); assert.equal(all.length, 3); // Not limited to alpha's project.
     const reverse = new ReverseStore({ state: path.join(root, 'reverse-jobs'), dshRoot: path.join(root, 'sessions') });
     for (const info of all) {
       const original = await client.export(info.id); assert.ok(original);
       const report = await reverse.receive(original, { importNow: true }); assert.equal(report.status, 'imported', report.error);
       const { session } = await captureLocalSession({ file: report.sessions[0].file });
+      if (process.env.DSH_NATIVE_APP_ROOT) {
+        const load = name => import(pathToFileURL(path.join(process.env.DSH_NATIVE_APP_ROOT, 'node_modules/@deepseek-ai', name, 'lib/index.js')));
+        const { Context } = await load('cordis'), persistence = await load('dsh-session-persistence-jsonl'), { Session } = await load('dsh-session');
+        const ctx = new Context(); const scope = ctx.plugin(persistence, { root: path.join(root, 'sessions'), compression: 'zstd' });
+        try {
+          await scope.await();
+          assert.ok((await ctx.sessionPersistence.list()).some(row => row.header.id === session.header.id));
+          const handle = await ctx.sessionPersistence.open(session.header.id, 'read');
+          try {
+            const native = await handle.read();
+            assert.equal(native.events.length, session.events.length);
+            const restored = Session.fromRestore(session.header.id, native.events, structuredClone(handle.header), handle.inheritedEventCount, native.eventState);
+            assert.ok(JSON.stringify(restored.deriveMessages()).includes('原始文件内容'));
+          } finally { await handle.close(); }
+        } finally { await scope.dispose(); }
+        t.diagnostic('native DSH persistence 0.2.1-rc.2: cold list/read/deriveMessages PASS');
+      }
       const project = sources.find(s => s.imported.sessions[0].sessionID === info.id) ?? (info.id === child.info.id ? sources[0] : null); assert.ok(project);
       assert.equal(session.header.cwd, original.info.location?.directory ?? original.info.directory);
       const roundtrip = await project.store.receive({ format: 'dsh-oc-migrate', version: 1, sessions: [session] }, { importNow: true }); assert.equal(roundtrip.status, 'imported', roundtrip.error);

@@ -3,11 +3,11 @@
 
 ## 一键桌面版
 
-从 [Releases](https://github.com/SummerXDsss/dsh-oc-migrate/releases/latest) 下载对应系统安装包，打开后点击「一键迁移全部对话」。自动发现本机 DSH 与 OpenCode，原件先备份、逐对话回读验证；无需安装插件或填写端口、令牌。原有插件与 CLI 工作链保留在高级流程。[桌面使用说明](docs/DESKTOP.md)。
+从 [Releases](https://github.com/SummerXDsss/dsh-oc-migrate/releases/latest) 下载对应系统安装包，打开后选择 **DSH → OpenCode** 或 **OpenCode → DSH**，点击「一键迁移全部对话」。自动发现本机 DSH 与 OpenCode，原件先备份、逐对话回读验证；无需安装插件或填写端口、令牌。原有插件与 CLI 工作链保留在高级流程。[桌面使用说明](docs/DESKTOP.md)。
 
 ## 桌面应用（Tauri 2）
 
-中文 GUI 是主要入口：自动发现 → 一键迁移全部对话 → 原生回读验证。内置中间件与运行时；插件接收、手动连接和 CLI 保留为高级方式。
+中文 GUI 是主要入口：选择方向 → 自动发现 → 一键迁移全部对话 → 原生回读验证。内置中间件与运行时；插件接收、手动连接和 CLI 保留为高级方式。
 
 [下载桌面版](https://github.com/SummerXDsss/dsh-oc-migrate/releases/latest) · [桌面使用与开发](docs/DESKTOP.md)
 
@@ -26,6 +26,15 @@ npm run desktop:dev
 DSH Host 插件 → gzip 迁移包 → 本地中间件 → OpenCode 原生 import / export
                                                    ├─ CLI
                                                    └─ 同一后端的 GUI
+```
+
+## 双向迁移
+
+OpenCode → DSH 使用原生 export 读取全部项目、分支、归档，生成 DSH 原生 v4 JSONL/Zstd。保留标题、项目路径、正文、思考、历史工具结果与原始 JSON；重复截面去重，已修改/已取得 DSH 写入权的会话回滚时保留。不是实时同步，也不覆盖合并已继续的历史。扩展事件和压缩状态作为快照留存，附件保留引用。[边界、回滚与 CLI 用法](docs/BIDIRECTIONAL.md)。
+
+```sh
+# 自动发现本机 OpenCode，迁移全部对话到 DSH
+node bin/dsh-oc-migrate.mjs to-dsh
 ```
 
 ## 当前进展

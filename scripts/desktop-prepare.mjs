@@ -7,7 +7,7 @@ if (!bunTargets[target]) throw new Error(`未配置 sidecar 平台 ${target}`);
 await mkdir('src-tauri/binaries', { recursive: true });
 await mkdir('src-tauri/resources', { recursive: true });
 const binary = `src-tauri/binaries/migrate-backend-${target}${target.includes('windows') ? '.exe' : ''}`;
-execFileSync('bun', ['build', '--compile', '--no-compile-autoload-dotenv', '--no-compile-autoload-bunfig', `--target=${bunTargets[target]}`, 'packages/desktop/src/service.mjs', '--outfile', binary], { stdio: 'inherit' });
+execFileSync('bun', ['run', 'scripts/build-sidecar.mjs', bunTargets[target], binary], { stdio: 'inherit' });
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const packed = JSON.parse(execFileSync(npm, ['pack', '--json', '--ignore-scripts'], { encoding: 'utf8', shell: process.platform === 'win32' }));
 await copyFile(packed[0].filename, 'src-tauri/resources/dsh-oc-migrate-plugin.tgz');

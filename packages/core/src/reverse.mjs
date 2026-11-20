@@ -20,7 +20,7 @@ export function encodeDshSession(session) {
 }
 export function convertOpenCode(transcript) {
   if (!transcript?.info || typeof transcript.info.id !== 'string' || !Array.isArray(transcript.messages)) throw new Error('需要完整的 OpenCode 原生 export JSON');
-  const revision = digest(transcript), id = `ocm-${revision.slice(0, 48)}`;
+  const revision = digest({ converter: 'oc-to-dsh-v4-1', transcript }), id = `ocm-${revision.slice(0, 48)}`;
   const createdAt = millis(transcript.info.time?.created, 0);
   const cwd = transcript.info.location?.directory ?? transcript.info.directory;
   const header = { id, version: 4, createdAt, isSeeded: false, delegationDepth: 0,

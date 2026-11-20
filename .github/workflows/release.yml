@@ -116,5 +116,5 @@ jobs:
             echo "Release already exists; use a new version instead of replacing published binaries"; exit 1
           else
             gh release create "$RELEASE_TAG" release-assets/* --target "$GITHUB_SHA" \
-              --title "DSH → OpenCode $RELEASE_TAG" --notes-file docs/RELEASE.md
+              --title "DSH ↔ OpenCode $RELEASE_TAG" --notes-file docs/RELEASE.md
           fi

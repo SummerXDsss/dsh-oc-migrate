@@ -37,6 +37,7 @@ export async function listSessionPages(fetchPage) {
       if (result.has(item.id)) throw new Error('会话列表在读取期间变化，请在 OpenCode 空闲时重试');
       result.set(item.id, item);
     }
+    if (page.cursor != null && (typeof page.cursor !== 'object' || Array.isArray(page.cursor))) throw new Error('OpenCode 会话分页格式异常');
     cursor = page.cursor?.next;
     if (cursor && (typeof cursor !== 'string' || cursors.has(cursor))) throw new Error('OpenCode 会话分页游标重复');
     if (cursor) cursors.add(cursor);
@@ -66,8 +67,9 @@ export async function createCliClient(config) {
   return {
     generation, version,
     identity: digest({ adapter: 'cli', binary, directory: config.directory, dataHome: env.XDG_DATA_HOME ?? '', db: env.OPENCODE_DB ?? '', generation }),
-    async listAll() {
-      if (generation === 'v2') return listSessionPages(async cursor => parseJSON((await run(['api', 'GET', `/api/session?limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`, ...flags])).stdout));
+    async listAll({ pageSize = 100 } = {}) {
+      if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100) throw new Error('OpenCode 分页大小需要 1–100');
+      if (generation === 'v2') return listSessionPages(async cursor => parseJSON((await run(['api', 'GET', `/api/session?limit=${pageSize}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`, ...flags])).stdout));
       const { stdout } = await run(['db', 'SELECT id, directory, parent_id, title, time_updated, time_archived FROM session ORDER BY id', '--format', 'json', ...flags]);
       const start = stdout.search(/^\s*\[/m);
       const rows = JSON.parse(stdout.slice(start));
@@ -115,9 +117,10 @@ export function createHttpClient(config) {
   return {
     generation: 'v2', version: 'v2-http',
     identity: digest({ adapter: 'http', server: url.origin, directory: config.directory, generation: 'v2' }),
-    async listAll() {
+    async listAll({ pageSize = 100 } = {}) {
+      if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100) throw new Error('OpenCode 分页大小需要 1–100');
       return listSessionPages(async cursor => {
-        const response = await request(`/api/session?limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`);
+        const response = await request(`/api/session?limit=${pageSize}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`);
         if (!response.ok) throw new Error(`OpenCode list HTTP ${response.status}`);
         return response.json();
       });

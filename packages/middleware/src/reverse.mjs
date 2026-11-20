@@ -22,7 +22,11 @@ async function exists(file) { try { await readFile(file); return true; } catch (
 export async function detectDshEncoding(root, requested) {
   const scan = await findLocalSessions(root);
   if (scan.errors.length) throw new Error(scan.errors[0].error);
-  const modes = new Set(scan.files.flatMap(item => (item.alternatives ?? [item.file]).map(file => file.endsWith('.zstd') ? 'zstd' : 'none')));
+  const modes = new Set();
+  for (const item of scan.files) {
+    // DSH rejects opposite encodings even when they belong to an older generation.
+    for (const name of await readdir(path.dirname(item.file))) if (/^session(?:\.v[1-9]\d*)?\.jsonl(?:\.zstd)?$/.test(name)) modes.add(name.endsWith('.zstd') ? 'zstd' : 'none');
+  }
   if (modes.size > 1) throw new Error('DSH sessions 混用了压缩和明文日志，请先在 DSH 核对存储配置');
   const encoding = [...modes][0] ?? requested ?? 'zstd';
   if (!['zstd', 'none'].includes(encoding) || requested && requested !== encoding) throw new Error('DSH 目标日志编码与所选配置不一致');
@@ -36,13 +40,16 @@ export class ReverseStore extends MigrationStore {
     const dshRoot = await realpath(this.config.dshRoot);
     const encoding = await detectDshEncoding(dshRoot, this.config.encoding);
     const item = convertOpenCode(transcript), sourceHash = digest(transcript);
-    const id = digest({ direction: 'oc-to-dsh', sourceHash, dshRoot, encoding });
+    const id = digest({ direction: 'oc-to-dsh', writer: 1, revision: item.revision, sourceHash, dshRoot, encoding });
     return this.locked(id, async dir => {
       let report;
       try { report = await this.read(id); } catch (error) { if (error.code !== 'ENOENT') throw error; }
       if (!report) {
         const file = path.join(dshRoot, dshProjectKey(item.session.header.cwd), item.sessionID, `session.v4.jsonl${encoding === 'zstd' ? '.zstd' : ''}`);
-        const bytes = encoding === 'zstd' ? zstdCompressSync(item.bytes) : item.bytes;
+        // DSH requires the first Zstd frame to contain exactly the header row.
+        // The event batch lives in a second frame, like native persistBatch.
+        const cut = item.bytes.indexOf(10) + 1;
+        const bytes = encoding === 'zstd' ? Buffer.concat([zstdCompressSync(item.bytes.subarray(0, cut)), zstdCompressSync(item.bytes.subarray(cut))]) : item.bytes;
         await atomicJSON(path.join(dir, 'source.json'), transcript);
         await writeFile(path.join(dir, 'session.log'), bytes, { mode: 0o600, flag: 'wx' });
         report = { id, direction: 'oc-to-dsh', generation: 'dsh-v4', status: 'received', sourceHash, destination: dshRoot, encoding, createdAt: new Date().toISOString(),

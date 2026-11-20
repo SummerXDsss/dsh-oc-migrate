@@ -36,8 +36,9 @@ jobs:
         run: |
           npm install --prefix "$RUNNER_TEMP/oc-v1" opencode-ai@1.18.31 --no-audit --no-fund
           npm install --prefix "$RUNNER_TEMP/oc-v2" @opencode/cli@2.3.2 --no-audit --no-fund
-      - name: Native CLI, server, and rollback regression
+      - name: Bidirectional native CLI, compiled desktop, server, and rollback regression
         run: |
+          DSH_NATIVE_APP_ROOT="$PWD" \
           DSH_OC_TEST_SIDECAR="$PWD/src-tauri/binaries/migrate-backend-x86_64-unknown-linux-gnu" \
           OPENCODE_V1_BIN="$RUNNER_TEMP/oc-v1/node_modules/.bin/opencode" \
           OPENCODE_V2_BIN="$RUNNER_TEMP/oc-v2/node_modules/.bin/opencode" \
