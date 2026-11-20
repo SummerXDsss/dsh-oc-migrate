@@ -1,5 +1,6 @@
 // OpenCode 1.x / 2.x -> DSH native v4. Never schedules or executes historical tools.
 import path from 'node:path';
+import { openCodeLabel } from './labels.mjs';
 import { sessionFormatCatalog } from '@deepseek-ai/dsh-session-format-catalog';
 import { digest, foldSurface } from './protocol.mjs';
 
@@ -78,7 +79,7 @@ export function convertOpenCode(transcript) {
     }
     event('step/end', { turn, step }); event('turn/end', { turn, reason: { kind: 'completed' } });
   }
-  event('session/title', { title: (transcript.info.title || `OpenCode ${transcript.info.id}`).trim() || 'OpenCode 历史', messageSeqs: [], source: { kind: 'user' } });
+  event('session/title', { title: openCodeLabel(transcript).title, messageSeqs: [], source: { kind: 'user' } });
   const session = { header, inheritedEventCount: 0, title: events.at(-1).data.title, events, surfaceEventSeqs: foldSurface(events) };
   const bytes = encodeDshSession(session);
   return { sourceID: transcript.info.id, sessionID: id, revision, session, bytes, warnings };

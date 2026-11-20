@@ -46,6 +46,7 @@ export function validateBundle(bundle) {
     ids.add(header.id);
     if (!Array.isArray(session.events)) fail('events 应为数组');
     if (session.title !== undefined && typeof session.title !== 'string') fail('title 应为字符串');
+    if (session.project !== undefined && (!session.project || typeof session.project.name !== 'string' || !session.project.name.trim() || session.project.name.length > 500 || typeof session.project.directory !== 'string' || session.project.directory.length > 32768)) fail('project 名称或路径无效');
     for (const [index, event] of session.events.entries()) {
       if (event?.seq !== index || !integer(event.time) || typeof event.type !== 'string' || !Object.hasOwn(event, 'data')) fail(`事件无效或 seq 不连续：${header.id} #${index}`);
       if (SURFACE_TYPES.has(event.type)) {

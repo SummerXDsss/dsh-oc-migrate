@@ -5,7 +5,7 @@ import { canonical, digest } from '../../core/src/protocol.mjs';
 const execute = promisify(execFile);
 // 只比较历史正文；原生导入会重绑 project、directory 并重新计算会话统计。
 export function transcriptShape(transcript) {
-  return { id: transcript.info.id, messages: transcript.messages.map(message => message.info ? {
+  return { id: transcript.info.id, title: transcript.info.title, messages: transcript.messages.map(message => message.info ? {
     id: message.info.id, role: message.info.role,
     parts: message.parts.map(part => part.type === 'tool'
       ? { type: part.type, id: part.callID, name: part.tool, status: part.state.status, input: part.state.input, output: part.state.output ?? part.state.error }

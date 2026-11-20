@@ -2,6 +2,7 @@
 // deepseek-ai/deepseek-harness@2e39e704, session-persistence-jsonl and session-format-v3-to-v4.
 import { readdir, open } from 'node:fs/promises';
 import path from 'node:path';
+import { dshLabel } from '../../core/src/labels.mjs';
 import { zstdDecompressSync } from 'node:zlib';
 import { FORMAT, foldSurface, validateBundle, digest } from '../../core/src/protocol.mjs';
 
@@ -57,8 +58,7 @@ export function decodeLocalLog(bytes, compressed = false) {
   for (const event of rows) if (event.type === 'session/end-seed' && event.data?.inherited === true) { inheritedEventCount = event.seq; marker = true; }
   if (!!header.isSeeded !== marker) throw new Error('日志的继承边界与会话头不一致');
   const session = { header, inheritedEventCount, events: rows, surfaceEventSeqs: foldSurface(rows) };
-  const title = rows.findLast(event => event.type === 'session/title')?.data?.title;
-  if (typeof title === 'string') session.title = title;
+  Object.assign(session, dshLabel(session));
   validateBundle({ format: FORMAT, version: 1, sessions: [session] });
   return session;
 }

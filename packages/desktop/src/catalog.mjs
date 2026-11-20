@@ -59,7 +59,7 @@ export class ConversationCatalog {
           const messages = s.events.filter(e => /^(user|assistant|system)\/message$/.test(e.type) || e.type === 'tool/result');
           const directory = s.header.cwd ?? '', workspace = directory ? workspaceFor(workspaces, s.header.id, await canonicalDirectory(directory)) : undefined;
           const titleMessages = nonEmpty(s.title) ? [] : s.events.filter(e => e.type === 'user/message').map(e => ({ role: 'user', text: e.data.content.filter(b => b.type === 'text').map(b => b.text).join('\n') }));
-          entry = { sourceID: s.header.id, ...conversationLabel(s.title, titleMessages, s.header.id), directory, created: s.header.createdAt,
+          entry = { sourceID: s.header.id, ...conversationLabel(s.title, titleMessages, s.header.id), ...(s.titleOrigin ? { titleOrigin: s.titleOrigin } : {}), directory, created: s.header.createdAt,
             projectDirectory: workspace?.directory, projectName: workspace?.name, projectNameOrigin: workspace?.name ? 'dsh-workspace' : 'directory',
             updated: s.events.reduce((n, e) => Math.max(n, e.time), s.header.createdAt), messageCount: messages.length,
             activeCount: s.surfaceEventSeqs.length, eventCount: s.events.length, parentID: s.header.parentSession ?? null,

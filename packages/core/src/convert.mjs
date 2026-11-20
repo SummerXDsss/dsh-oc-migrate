@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { dshLabel } from './labels.mjs';
 import { digest, validateBundle, SURFACE_TYPES } from './protocol.mjs';
 
 // Version both the converted session IDs and middleware jobs when projection changes.
@@ -37,12 +38,13 @@ export function convertBundle(bundle, options) {
 
 function convertSession(source, options) {
   const { directory, generation } = options;
+  const sourceTitle = dshLabel(source).title;
   const target = { providerID: options.provider ?? 'deepseek', modelID: options.model ?? 'deepseek-chat' };
   const events = options.archive ? source.events.filter(event => SURFACE_TYPES.has(event.type)) : source.surfaceEventSeqs.map(seq => source.events[seq]);
   const states = new Map();
   if (options.stateSnapshots !== false) for (const event of source.events) if (/^(todo|goal)[/]/.test(event.type)) states.set(event.type.split('/')[0], event);
   // /oc-migrate 本身也会记 command/run/done；仅原始审计尾巴变化不应复制聊天。
-  const revision = digest({ converter: CONVERTER_REVISION, header: source.header, title: source.title ?? null, inheritedEventCount: source.inheritedEventCount ?? 0, events, states: [...states.values()], directory, generation, target, archive: !!options.archive });
+  const revision = digest({ converter: CONVERTER_REVISION, header: source.header, title: sourceTitle, inheritedEventCount: source.inheritedEventCount ?? 0, events, states: [...states.values()], directory, generation, target, archive: !!options.archive });
   const sessionID = `ses_${revision.slice(0, 26)}`;
   const warnings = [];
   // 先配对结果再转换 assistant；不把 tool/result 重复写成用户消息。
@@ -139,7 +141,7 @@ function convertSession(source, options) {
   }
   const created = source.header.createdAt, updated = source.events.reduce((time, event) => Math.max(time, event.time), created);
   const metadata = { dshMigration: { revision, view: options.archive ? 'archive' : 'active', sourceID: source.header.id, parentSession: source.header.parentSession ?? null, sourceCwd: source.header.cwd ?? null, rawEventCount: source.events.length, surfaceEventCount: events.length } };
-  const title = (options.archive ? '[归档全文] ' : '') + (source.title || `DeepSeek · ${source.header.id}`);
+  const title = (options.archive ? '[归档全文] ' : '') + sourceTitle;
   const info = generation === 'v1'
     ? { id: sessionID, slug: `dsh-${revision.slice(0, 12)}`, projectID: 'global', directory, title, version: '1.18.31', time: { created, updated }, metadata }
     : { id: sessionID, projectID: 'global', location: { directory }, title, cost: 0, tokens: zeros(), time: { created, updated }, metadata };

@@ -17,7 +17,7 @@ function queryFor(bundles) {
   };
 }
 test('真实插件入口声明 commands/sessionQuery，截面读取保留全部 raw log', async () => {
-  assert.deepEqual(inject, ['commands', 'sessionQuery']); assert.ok(Config);
+  assert.deepEqual(inject, { required: ['commands', 'sessionQuery'], optional: ['workspaceRegistry'] }); assert.ok(Config);
   const bundle = fixture({ compact: true });
   const captured = await captureSession(queryFor([bundle]), bundle.sessions[0].header.id);
   assert.equal(captured.events.length, bundle.sessions[0].events.length);

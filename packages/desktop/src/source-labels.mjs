@@ -1,7 +1,8 @@
 import path from 'node:path';
 import { readFile, realpath, stat } from 'node:fs/promises';
 
-export const nonEmpty = value => typeof value === 'string' && value.trim() ? value.trim() : undefined;
+import { nonEmpty } from '../../core/src/labels.mjs';
+export { nonEmpty, conversationLabel } from '../../core/src/labels.mjs';
 export async function canonicalDirectory(directory) {
   if (!directory || !path.isAbsolute(directory)) return directory || '';
   try { return await realpath(directory); } catch { return path.normalize(directory); }
@@ -32,13 +33,4 @@ export function workspaceFor(records, sourceID, directory) {
     const relative = path.relative(record.directory, directory);
     return relative === '' || relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative);
   }).sort((a, b) => b.directory.length - a.directory.length)[0];
-}
-export function conversationLabel(title, messages, sourceID) {
-  if (nonEmpty(title)) return { title: nonEmpty(title), titleOrigin: 'source' };
-  const first = messages.find(message => message.role === 'user' && nonEmpty(message.text));
-  if (first) {
-    const text = first.text.replace(/\s+/g, ' ').trim(), characters = Array.from(text);
-    return { title: characters.slice(0, 80).join('') + (characters.length > 80 ? '…' : ''), titleOrigin: 'first-message' };
-  }
-  return { title: '空白对话 · ' + sourceID.slice(-8), titleOrigin: 'empty' };
 }

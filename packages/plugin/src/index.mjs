@@ -1,10 +1,11 @@
 import z from '@deepseek-ai/schemastery';
+import { dshLabel } from '../../core/src/labels.mjs';
 import { readFile } from 'node:fs/promises';
 import { gzipSync } from 'node:zlib';
 import { FORMAT, digest, validateBundle } from '../../core/src/protocol.mjs';
 
 export const name = 'dsh-oc-migrate';
-export const inject = ['commands', 'sessionQuery'];
+export const inject = { required: ['commands', 'sessionQuery'], optional: ['workspaceRegistry'] };
 export const Config = z.object({
   receiver: z.string().default('http://127.0.0.1:48765'),
   tokenFile: z.string().required(),
@@ -19,8 +20,7 @@ export async function captureSession(query, id, signal) {
     if (surface.capturedThroughSeq !== (raw.events.at(-1)?.seq ?? null)) continue;
     if (JSON.stringify(raw.session) !== JSON.stringify(surface.session)) continue;
     const session = { header: raw.session, inheritedEventCount: raw.inheritedEventCount, events: raw.events, surfaceEventSeqs: surface.events.map(event => event.seq) };
-    const title = raw.events.findLast(event => event.type === 'session/title')?.data?.title;
-    if (typeof title === 'string') session.title = title;
+    Object.assign(session, dshLabel(session));
     validateBundle({ format: FORMAT, version: 1, sessions: [session] });
     return session;
   }
@@ -72,7 +72,12 @@ export function apply(ctx, config) {
         };
         for (const id of ids) {
           invocation.signal?.throwIfAborted();
-          try { batch.push(await captureSession(ctx.sessionQuery, id, invocation.signal)); }
+          try {
+            const session = await captureSession(ctx.sessionQuery, id, invocation.signal);
+            const workspace = ctx.workspaceRegistry?.list().find(w => w.sessionIds.includes(id));
+            if (workspace) session.project = { name: workspace.title, directory: workspace.path };
+            batch.push(session);
+          }
           catch (error) {
             invocation.signal?.throwIfAborted();
             if (input !== 'all') throw error;
