@@ -1,10 +1,9 @@
-import { execFile, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { promisify } from 'node:util';
+import { executeToFile as execute } from './process.mjs';
 import { resolveCliBinary } from './discovery.mjs';
 import { canonical, digest } from '../../core/src/protocol.mjs';
 
-const execute = promisify(execFile);
 // 1.x has no `api` subcommand. Use its supported loopback HTTP API, not SQL writes.
 async function v1ProjectUpdate(binary, config, env, id, name, kind = 'project') {
   const password = randomBytes(24).toString('hex');
@@ -39,6 +38,16 @@ export function transcriptShape(transcript) {
 }
 export function verifyTranscript(expected, actual) {
   if (canonical(transcriptShape(expected)) !== canonical(transcriptShape(actual))) throw new Error(`会话 ${expected.info.id} 回读不匹配：请保留任务原件检查，未标记导入成功`);
+}
+// Accept unchanged imported history plus later append-only conversation. Never
+// overwrite it; rollback still uses strict verifyTranscript and preserves usage.
+export function verifyImportedHistory(expected, actual) {
+  if (actual.messages.length > expected.messages.length) {
+    verifyTranscript(expected, { ...actual, messages: actual.messages.slice(0, expected.messages.length) });
+    return 'existing-continued-preserved';
+  }
+  verifyTranscript(expected, actual);
+  return 'existing-verified';
 }
 const parseJSON = stdout => {
   // 1.x 首次启动可能在 JSON 前输出迁移提示；仅接受实际 JSON 对象起点。
@@ -136,7 +145,7 @@ export async function createCliClient(config) {
     },
     async import(file, expected) {
       const existing = await this.export(expected.info.id);
-      if (existing) { verifyTranscript(expected, existing); return { status: 'existing-verified' }; }
+      if (existing) return { status: verifyImportedHistory(expected, existing) };
       const { stdout } = await run([...prefix, 'import', file, ...flags]);
       const actual = await this.export(expected.info.id);
       if (!actual) throw new Error('原生 import 结束后未找到会话');
@@ -206,8 +215,8 @@ export function createHttpClient(config) {
       if (!response.ok && response.status !== 409) throw new Error(`OpenCode import HTTP ${response.status}`);
       const actual = await this.export(expected.info.id);
       if (!actual) throw new Error('OpenCode HTTP 导入后未找到会话');
-      verifyTranscript(expected, actual);
-      return { status: response.status === 409 ? 'existing-verified' : 'imported-verified' };
+      const status = response.status === 409 ? verifyImportedHistory(expected, actual) : (verifyTranscript(expected, actual), 'imported-verified');
+      return { status };
     },
     async remove(sessionID) {
       const response = await request(`/api/session/${encodeURIComponent(sessionID)}`, { method: 'DELETE' });

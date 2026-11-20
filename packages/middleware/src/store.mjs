@@ -85,6 +85,7 @@ export class MigrationStore {
         // 即使任务曾成功，也要确认目标中的会话尚在，且正文一致。
         const receipt = await client.import(file, expected);
         Object.assign(item, { status: 'verified', receipt });
+        if (receipt.status === 'existing-continued-preserved') item.warnings = [...new Set([...(item.warnings ?? []), '这个对话已继续聊天，已保留后续新增消息；撤销不会删除已使用的历史。'])];
         await atomicJSON(path.join(dir, 'report.json'), report);
       }
       if (report.projectName) {

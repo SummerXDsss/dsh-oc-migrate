@@ -91,3 +91,13 @@ test('导出命令的审计尾巴变化不会复制相同对话，raw 包 hash �
   assert.equal(a.sessionID, b.sessionID); assert.notEqual(contentDigest(bundle), contentDigest(changed));
   verifyTranscript(a.transcript, b.transcript);
 });
+
+test('继续聊天只接受完整原件的追加前缀，严格撤销校验仍拒绝删除已使用记录', async () => {
+ const {verifyImportedHistory}=await import('../packages/opencode-client/src/index.mjs');
+ for(const generation of ['v1','v2']){
+ const expected=convertBundle(fixture(),{directory:'/target',generation})[0].transcript,actual=structuredClone(expected);
+ const extra=structuredClone(actual.messages.at(-1));if(extra.info)extra.info.id='followup';else extra.id='followup';actual.messages.push(extra);
+ assert.equal(verifyImportedHistory(expected,actual),'existing-continued-preserved');assert.throws(()=>verifyTranscript(expected,actual),/回读不匹配/);
+ if(actual.messages[0].parts)actual.messages[0].parts[0].text='modified';else actual.messages[0].text='modified';assert.throws(()=>verifyImportedHistory(expected,actual),/回读不匹配/);
+ }
+});
