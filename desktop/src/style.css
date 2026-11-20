@@ -54,3 +54,5 @@
 .permission-help { margin: 0 0 24px; padding: 16px 18px; border-left: 2px solid var(--ink-secondary); background: var(--surface); font-size: 13px; line-height: 1.75; }
 .permission-help strong { color: var(--ink); font-weight: 600; }
 .permission-help p { margin: 4px 0 0; color: var(--muted); }
+/* Keep tutorial actions in view on the desktop's minimum-height window. */
+@media (max-height:760px) and (min-width:851px){.onboarding{padding-top:22px;margin-top:24px}.guide-note{margin-top:12px}.guide-actions{padding-top:20px}.guide-panel{min-height:380px}}
