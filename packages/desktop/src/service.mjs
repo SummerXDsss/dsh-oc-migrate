@@ -127,7 +127,7 @@ export class DesktopService {
     finally { this.emit({ type: 'jobs-changed', id }); }
   }
   async request(method, payload = {}) {
-    if (this.quick.active && !['snapshot', 'discoverQuick', 'cancelQuick'].includes(method)) throw new Error('请等待一键迁移完成，或先停止迁移');
+    if (this.quick.active && !['snapshot', 'discoverQuick', 'cancelQuick', 'catalogPreview', 'catalogUpdate'].includes(method)) throw new Error('请等待一键迁移完成，或先停止迁移');
     switch (method) {
       case 'scanCatalog': return this.catalog.scan(payload);
       case 'catalogPreview': return this.catalog.preview(payload);

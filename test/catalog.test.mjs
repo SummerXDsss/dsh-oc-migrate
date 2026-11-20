@@ -76,3 +76,19 @@ test('OpenCode 扫描跨项目预览并仅选一条导入 DSH；源变更与版�
   await app.request('startSelected', { scanID: c.id, ids: [e.id] }); await app.quick.done;
   assert.equal(app.quick.current.imported, 0); assert.match(app.quick.current.errors[0].error, /自扫描后已变化/);
 });
+
+test('管理器模板：搜索/收藏/项目组合筛选，分页保留全局选择，源内容与名称转义', async t => {
+  const { transpileModule, ModuleKind } = await import('typescript');
+  const source = await readFile(new URL('../desktop/src/catalog.ts', import.meta.url), 'utf8');
+  const output = transpileModule(source, { compilerOptions: { module: ModuleKind.ES2022 } }).outputText;
+  const { catalogHTML, newCatalogView, filteredEntries } = await import('data:text/javascript;base64,' + Buffer.from(output).toString('base64'));
+  const c = { id: 'scan', direction: 'dsh-to-oc', input: {}, scannedAt: '2026-11-20T00:00:00Z', plan: { target: {version:'fixture'} }, errors: [], projects: [{id:'A',name:'项目甲',directory:'/A',count:45},{id:'B',name:'项目乙',directory:'/B',count:1}], entries: Array.from({length:46},(_,i)=>({id:String(i),sourceID:'s'+i,title:i===0?'<script>alert(1)</script>':'中文对话'+i,directory:i===45?'/B':'/A',projectID:i===45?'B':'A',starred:i===0,messageCount:3,updated:i})) };
+  const v=newCatalogView();v.project='A';v.onlyStarred=true;
+  assert.equal(filteredEntries(c,v).length,1);v.query='中文';assert.equal(filteredEntries(c,v).length,0);
+  v.query='';v.onlyStarred=false;v.selected.add('45');
+  let html=catalogHTML(c,v);assert.equal((html.match(/data-catalog-select=/g)||[]).length,40);assert.match(html,/已选 1 个对话/);assert.match(html,/1 \/ 2/);
+  v.page=1;html=catalogHTML(c,v);assert.match(html,/&lt;script&gt;/);assert.doesNotMatch(html,/<script>alert/);
+  v.focused='0';v.preview={id:'0',offset:0,total:1,messages:[{role:'assistant',active:false,text:'<img src=x onerror=alert(1)>'}]};
+  html=catalogHTML(c,v);assert.match(html,/&lt;img/);assert.match(html,/已被替换 · 全文保留/);assert.match(html,/不改源标题/);
+  assert.match(catalogHTML(c,v,true),/data-action="startSelected" disabled/);
+});
