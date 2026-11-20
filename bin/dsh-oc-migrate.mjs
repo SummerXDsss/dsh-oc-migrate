@@ -9,7 +9,7 @@ import { createCliClient, createHttpClient } from '../packages/opencode-client/s
 import { MigrationStore, atomicJSON } from '../packages/middleware/src/store.mjs';
 import { createReceiver } from '../packages/middleware/src/server.mjs';
 
-const help = `dsh-oc-migrate 0.1.0 — DeepSeek Harness → OpenCode 1.x / 2.x
+const help = `dsh-oc-migrate 0.2.0 — DeepSeek Harness → OpenCode 1.x / 2.x
 
   init [--state DIR] [--token-file FILE]              创建本地接收令牌
   serve --directory DIR --token-file FILE [--auto-import]

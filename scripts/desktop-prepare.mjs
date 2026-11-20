@@ -1,0 +1,15 @@
+import { execFileSync } from 'node:child_process';
+import { mkdir, copyFile, rm } from 'node:fs/promises';
+import path from 'node:path';
+const target = process.env.TAURI_ENV_TARGET_TRIPLE || execFileSync('rustc', ['-vV'], { encoding: 'utf8' }).match(/^host: (.+)$/m)[1];
+const bunTargets = { 'aarch64-apple-darwin': 'bun-darwin-arm64', 'x86_64-apple-darwin': 'bun-darwin-x64', 'x86_64-unknown-linux-gnu': 'bun-linux-x64-baseline', 'x86_64-pc-windows-msvc': 'bun-windows-x64-baseline' };
+if (!bunTargets[target]) throw new Error(`未配置 sidecar 平台 ${target}`);
+await mkdir('src-tauri/binaries', { recursive: true });
+await mkdir('src-tauri/resources', { recursive: true });
+const binary = `src-tauri/binaries/migrate-backend-${target}${target.includes('windows') ? '.exe' : ''}`;
+execFileSync('bun', ['build', '--compile', `--target=${bunTargets[target]}`, 'packages/desktop/src/service.mjs', '--outfile', binary], { stdio: 'inherit' });
+const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+const packed = JSON.parse(execFileSync(npm, ['pack', '--json', '--ignore-scripts'], { encoding: 'utf8', shell: process.platform === 'win32' }));
+await copyFile(packed[0].filename, 'src-tauri/resources/dsh-oc-migrate-plugin.tgz');
+await rm(packed[0].filename);
+console.log(`desktop sidecar: ${target}`);

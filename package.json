@@ -1,24 +1,56 @@
 {
   "name": "dsh-oc-migrate",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "DeepSeek Harness 对话历史 → 本地中间件 → OpenCode CLI / GUI",
   "type": "module",
   "license": "MIT",
-  "engines": { "node": ">=22.19" },
-  "bin": { "dsh-oc-migrate": "./bin/dsh-oc-migrate.mjs" },
+  "engines": {
+    "node": ">=22.19"
+  },
+  "bin": {
+    "dsh-oc-migrate": "./bin/dsh-oc-migrate.mjs"
+  },
   "exports": {
     ".": "./packages/plugin/src/index.mjs",
     "./core": "./packages/core/src/convert.mjs",
     "./middleware": "./packages/middleware/src/server.mjs"
   },
-  "files": ["bin", "packages", "docs", "examples", "README.md", "LICENSE"],
+  "files": [
+    "bin",
+    "packages/core",
+    "packages/plugin",
+    "packages/middleware",
+    "packages/opencode-client",
+    "docs",
+    "examples",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "test": "node --test test/*.test.mjs",
     "check": "node scripts/check.mjs",
     "test:integration": "node --test test/integration/*.test.mjs",
     "test:package": "node scripts/package-smoke.mjs",
-    "start": "node bin/dsh-oc-migrate.mjs serve"
+    "start": "node bin/dsh-oc-migrate.mjs serve",
+    "desktop:prepare": "node scripts/desktop-prepare.mjs",
+    "desktop:web:dev": "vite --config desktop/vite.config.ts",
+    "desktop:web:build": "tsc -p desktop/tsconfig.json && vite build --config desktop/vite.config.ts",
+    "desktop:dev": "tauri dev",
+    "desktop:build": "tauri build",
+    "desktop:check": "cargo check --manifest-path src-tauri/Cargo.toml"
   },
-  "dependencies": { "@deepseek-ai/schemastery": "3.19.0" },
-  "repository": { "type": "git", "url": "https://github.com/SummerXDsss/dsh-oc-migrate.git" }
+  "dependencies": {
+    "@deepseek-ai/schemastery": "3.19.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SummerXDsss/dsh-oc-migrate.git"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.6",
+    "typescript": "5.9.3",
+    "vite": "8.3.8",
+    "@tauri-apps/api": "2.12.5",
+    "@tauri-apps/plugin-dialog": "2.8.4"
+  }
 }

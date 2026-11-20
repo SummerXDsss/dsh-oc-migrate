@@ -5,7 +5,7 @@
 ## 本地安装
 
 1. 在仓库运行 `npm ci && npm pack`，得到 `.tgz`。
-2. 使用 DSH 的 profile 插件管理安装这个本地包；若当前 DSH CLI 支持本地包参数，可使用 `dsh plugin --profile web add /absolute/path/dsh-oc-migrate-0.1.0.tgz`。具体参数以本机 `dsh plugin --help` 为准。
+2. 使用 DSH 的 profile 插件管理安装这个本地包；若当前 DSH CLI 支持本地包参数，可使用 `dsh plugin --profile web add /absolute/path/dsh-oc-migrate-0.2.0.tgz`。具体参数以本机 `dsh plugin --help` 为准。
 3. 在对应 profile 的 `cordis.patch.yml` 中配置插件。插件管理器已有条目时按实际 id 覆盖 config，不要重复挂载。手动新增插件行的完整 patch 是：
 
 ```yaml

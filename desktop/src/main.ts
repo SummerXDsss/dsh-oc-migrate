@@ -1,0 +1,99 @@
+import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
+import { open, confirm } from '@tauri-apps/plugin-dialog';
+import './style.css';
+
+type Job = { id: string; status: string; generation?: string; createdAt?: string; error?: string; sessions?: { sessionID: string; title?: string; status: string; view?: string }[] };
+type Snapshot = { settings: Record<string, unknown>; receiver: null | { url: string; autoImport: boolean; version: string; directory: string }; jobs: Job[]; stateDirectory: string; tokenFile: string; pluginFile: string | null };
+const root = document.querySelector<HTMLDivElement>('#app')!;
+let state: Snapshot = { settings: {}, receiver: null, jobs: [], stateDirectory: '', tokenFile: '', pluginFile: null };
+let page = 'migrate', busy = false, connected = '', notice = '', isError = false, selected = '';
+const esc = (v: unknown) => String(v ?? '').replace(/[&<>"']/g, s => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[s]!);
+const icons: Record<string, string> = { arrow: '<path d="M4 8h14m-4-4 4 4-4 4M20 16H6m4-4-4 4 4 4"/>', inbox: '<path d="M4 4h16v16H4zM4 14h5l1 3h4l1-3h5"/>', history: '<path d="M3 11a9 9 0 1 1 2 7M3 4v7h7m2-4v6l4 2"/>', plug: '<path d="M8 3v5m8-5v5M6 8h12v3a6 6 0 0 1-12 0V8zm6 9v4"/>', folder: '<path d="M3 6h7l2 3h9v11H3z"/>', check: '<path d="m5 12 4 4L19 6"/>', chevron: '<path d="m9 5 7 7-7 7"/>', refresh: '<path d="M20 10a8 8 0 0 0-14-4L3 9m0-6v6h6m-5 5a8 8 0 0 0 14 4l3-3m0 6v-6h-6"/>' };
+const icon = (name: string) => `<svg viewBox="0 0 24 24" aria-hidden="true">${icons[name] || icons.arrow}</svg>`;
+const statusName: Record<string, string> = { received: '等待导入', importing: '导入中', imported: '已回读验证', failed: '需要处理', 'rolled-back': '已回滚', incomplete: '记录不完整', verified: '已验证', pending: '待导入', 'preserved-existing': '保留已有会话' };
+const rpc = <T = unknown>(method: string, payload = {}): Promise<T> => invoke('desktop_request', { method, payload });
+const val = (id: string) => (document.getElementById(id) as HTMLInputElement)?.value ?? '';
+const checked = (id: string) => (document.getElementById(id) as HTMLInputElement)?.checked ?? false;
+const setting = (key: string, fallback = '') => esc(state.settings[key] ?? fallback);
+const input = (id: string, label: string, value: string, placeholder: string, browse?: string) => `<label class="field" for="${id}"><span>${label}</span><div class="input-row"><input id="${id}" value="${value}" placeholder="${placeholder}" autocomplete="off" spellcheck="false">${browse ? `<button class="icon-button" type="button" data-action="browse" data-field="${id}" data-kind="${browse}" aria-label="选择${label}">${icon('folder')}</button>` : ''}</div></label>`;
+function config() {
+  return { directory: val('directory'), binary: val('binary'), generation: val('generation'), server: val('server'), dataHome: val('dataHome'), passwordFile: val('passwordFile'), includeArchive: checked('archive'), stateSnapshots: checked('snapshots') };
+}
+function render() {
+  const count = state.jobs.filter(j => j.status === 'imported').length;
+  root.innerHTML = `<aside class="sidebar"><a class="brand" href="#" data-action="nav" data-page="migrate"><span class="brand-mark">${icon('arrow')}</span><span>对话搬家<small>DSH → OpenCode</small></span></a><div class="nav-label">工作区</div><nav aria-label="主导航">${[['migrate', 'inbox', '迁移工作台'], ['jobs', 'history', '迁移记录'], ['plugin', 'plug', '连接 DSH 插件']].map(([id, glyph, label]) => `<button data-action="nav" data-page="${id}" class="nav-item ${page === id ? 'active' : ''}" ${page === id ? 'aria-current="page"' : ''}>${icon(glyph)}<span>${label}</span>${id === 'jobs' && state.jobs.length ? `<b>${state.jobs.length}</b>` : ''}</button>`).join('')}</nav><div class="sidebar-bottom"><div class="local-indicator"><i></i> 全程在本机处理</div><p>原始记录留存 · 导入可回滚</p><div class="version">DESKTOP <span>v0.2.0 · Tauri</span></div></div></aside><main><header class="topbar"><span>DeepSeek Harness <span class="route-arrow">→</span> OpenCode</span><span class="pill ${state.receiver ? 'live' : ''}"><i></i>${state.receiver ? '接收端运行中' : '接收端未启动'}</span></header><div class="content"><div class="page-heading"><div class="eyebrow">${page === 'migrate' ? 'YOUR CONTEXT, CONTINUED' : page === 'jobs' ? 'MIGRATION JOURNAL' : 'CONNECT THE SOURCE'}</div><h1>${page === 'migrate' ? '换个工具，继续对话。' : page === 'jobs' ? '每次迁移，都有迹可循。' : '把 DSH 的上下文带过来。'}</h1><p>${page === 'migrate' ? '保留完整原始日志，将有效上下文与归档全文迁入 OpenCode。' : page === 'jobs' ? '查看真实导入状态、回读结果，或回滚尚未继续的迁移会话。' : '桌面应用内置中间件；DSH Host 插件负责读取全部可列出的对话。'}</p></div>${notice ? `<div class="notice ${isError ? 'error' : 'success'}" role="${isError ? 'alert' : 'status'}"><span>${esc(notice)}</span><button data-action="dismiss" aria-label="关闭提示">×</button></div>` : ''}${page === 'migrate' ? migrate() : page === 'jobs' ? jobs() : plugin()}<footer><span>${icon('check')} OpenCode 1.x / 2.x 原生格式</span><span>${count} 个任务已回读验证</span></footer></div></main><div class="working" ${busy ? '' : 'hidden'} role="status"><span class="spinner"></span>正在处理，请稍候…</div>`;
+  root.querySelectorAll<HTMLButtonElement>('button').forEach(button => { if (busy && !['nav', 'dismiss'].includes(button.dataset.action || '')) button.disabled = true; });
+}
+function migrate() {
+  return `<div class="flow-line"><span><b>01</b> 连接目标</span><i></i><span><b>02</b> 接收 / 导入</span><i></i><span><b>03</b> 回读验证</span></div><section class="section target-section"><div class="section-heading"><h2><span class="step">01</span> OpenCode 目标</h2><span class="subtle">CLI 与桌面端共享同一历史存储</span></div><div class="form-grid">${input('directory', '目标项目文件夹', setting('directory'), '选择迁入会话所属的项目', 'directory')}${input('binary', 'OpenCode 可执行文件', setting('binary'), 'opencode 或绝对路径', 'file')}</div><details class="advanced"><summary>高级连接与保留选项</summary><div class="form-grid"><label class="field"><span>目标版本</span><select id="generation"><option value="auto">自动检测（推荐）</option><option value="v1" ${state.settings.generation === 'v1' ? 'selected' : ''}>OpenCode 1.x</option><option value="v2" ${state.settings.generation === 'v2' ? 'selected' : ''}>OpenCode 2.x</option></select></label>${input('server', '2.x 服务地址（可选）', setting('server'), 'http://127.0.0.1:4096')}${input('dataHome', '自定义 XDG_DATA_HOME（可选）', setting('dataHome'), '留空使用 OpenCode 默认存储', 'directory')}${input('passwordFile', '服务密码文件（可选）', setting('passwordFile'), '从文件读取，不在界面展示', 'file')}</div><div class="options"><label><input type="checkbox" id="archive" ${state.settings.includeArchive !== false ? 'checked' : ''}>保留被压缩 / 替换的历史全文</label><label><input type="checkbox" id="snapshots" ${state.settings.stateSnapshots !== false ? 'checked' : ''}>附带任务与目标状态快照</label></div></details><div class="section-actions"><button class="button secondary" data-action="detect">${icon('refresh')}查找本机 OpenCode</button><button class="button primary" data-action="connect">检测并连接${icon('chevron')}</button><span class="connection-state">${connected ? `${icon('check')}${esc(connected)}` : '尚未验证目标'}</span></div><div id="candidates"></div></section><section class="section receive-section"><div class="section-heading"><h2><span class="step">02</span> 选择迁移方式</h2></div><div class="receive-grid"><div><div class="source-heading">${icon('plug')}从 DSH 插件接收<span class="tag">全部对话</span></div><p class="description">启动接收后，在 DSH 运行 <code>/oc-migrate all</code>。<br>插件会分批传输原始事件与有效上下文。</p><div class="receiver-controls"><label class="port-label">本地端口<input id="port" type="number" min="1" max="65535" value="${state.receiver ? new URL(state.receiver.url).port : '48765'}" ${state.receiver ? 'disabled' : ''}></label><label class="inline-check"><input id="autoImport" type="checkbox" checked ${state.receiver ? 'disabled' : ''}>收到后自动导入</label></div><div class="section-actions"><button class="button ${state.receiver ? 'secondary' : 'primary'}" data-action="${state.receiver ? 'stop' : 'start'}">${state.receiver ? '停止接收' : '启动本地接收'}</button><button class="text-button" data-action="nav" data-page="plugin">插件连接说明 ↗</button></div>${state.receiver ? `<p class="endpoint"><i></i>${esc(state.receiver.url)} · ${esc(state.receiver.version)}<br><small>目标：${esc(state.receiver.directory)}</small></p>` : ''}</div><div class="file-source"><div class="source-heading">${icon('folder')}导入本地迁移包</div><p class="description">已有插件导出的 JSON 文件？<br>直接选择，导入后会逐会话回读核对。</p><button class="button secondary" data-action="importFile">${icon('inbox')}选择 JSON 文件</button><p class="file-note">支持 dsh-oc-migrate v1 格式 · 最大 64 MiB</p></div></div></section><div class="integrity-note">${icon('check')}原件先落盘，回读通过后才标记成功。迁移不会重新执行历史工具调用。</div>`;
+}
+function jobs() {
+  const ordered = [...state.jobs].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+  const detail = state.jobs.find(j => j.id === selected);
+  return `<section class="section journal"><div class="section-heading"><h2>迁移任务 <span class="count">${state.jobs.length}</span></h2><button class="button secondary compact" data-action="refresh">${icon('refresh')}刷新</button></div>${!ordered.length ? `<div class="empty-state">${icon('history')}<h3>还没有迁移记录</h3><p>连接 OpenCode 后，接收 DSH 历史或导入本地文件。</p><button class="button primary" data-action="nav" data-page="migrate">开始第一次迁移</button></div>` : `<div class="table-wrap"><table><thead><tr><th>任务 / 时间</th><th>会话</th><th>目标</th><th>状态</th><th></th></tr></thead><tbody>${ordered.map(j => `<tr><td><button class="job-link" data-action="detail" data-id="${j.id}">${esc(j.id.slice(0, 12))}</button><small>${j.createdAt ? esc(new Date(j.createdAt).toLocaleString('zh-CN', { hour12: false })) : '未知时间'}</small></td><td>${j.sessions?.length ?? '—'}</td><td>${esc(j.generation?.replace('v', '') || '—')}.x</td><td><span class="status-badge ${esc(j.status)}">${esc(statusName[j.status] || j.status)}</span></td><td><button class="text-button" data-action="detail" data-id="${j.id}">详情${icon('chevron')}</button></td></tr>`).join('')}</tbody></table></div>`}</section>${detail ? `<section class="section detail"><div class="section-heading"><h2>任务详情</h2><span class="mono">${esc(detail.id.slice(0, 16))}</span></div>${detail.error ? `<p class="error-text">${esc(detail.error)}</p>` : ''}<ul class="session-list">${detail.sessions?.map(s => `<li><div><strong>${esc(s.title || s.sessionID)}</strong><code>${esc(s.sessionID)}</code></div><span>${esc(statusName[s.status] || s.status)}</span></li>`).join('') || ''}</ul><div class="section-actions"><button class="button secondary" data-action="retry" data-id="${detail.id}">导入 / 重新验证</button><button class="button danger" data-action="rollback" data-id="${detail.id}">回滚此任务</button><span class="subtle">只删除本任务创建、正文未改且没有子分支的会话。</span></div></section>` : ''}<p class="storage-line">原始迁移包与报告保存在 <code>${esc(state.stateDirectory)}</code></p>`;
+}
+function plugin() {
+  const url = state.receiver?.url || 'http://127.0.0.1:48765';
+  const patch = `- insert:\n    - id: dsh-oc-migrate\n      name: dsh-oc-migrate\n      config:\n        receiver: ${url}\n        tokenFile: ${JSON.stringify(state.tokenFile)}\n        batchSize: 20`;
+  return `<section class="section plugin-guide"><div class="guide-row"><span class="step">01</span><div><h2>在 DSH profile 安装插件包</h2><p>使用 DSH 插件管理器添加安装包内附带的本地 npm 包。插件包路径：</p><code class="path-block">${esc(state.pluginFile || '正在读取资源路径…')}</code><p class="subtle">插件安装在 DSH Host 中，不是浏览器扩展。启用后按 DSH 提示重载 profile。</p></div></div><div class="guide-row"><span class="step">02</span><div><h2>配置接收地址与令牌文件</h2><p>在相应 profile 的 <code>cordis.patch.yml</code> 配置下方内容。已有插件条目时，更新该条目的 config，避免重复挂载。</p><textarea class="config-code" aria-label="DSH 插件配置" readonly rows="9">${esc(patch)}</textarea><p class="subtle">令牌由桌面应用自动创建；仅显示文件路径，不展示令牌内容。</p></div></div><div class="guide-row"><span class="step">03</span><div><h2>启动接收，然后导出全部对话</h2><p>先返回迁移工作台连接 OpenCode 并启动接收，再在 DSH 输入：</p><div class="command-pair"><code>/oc-migrate list</code><span>确认可读取的对话</span><code>/oc-migrate all</code><span>分批传输全部可列出对话</span></div><p class="subtle">可用 current 或会话 ID 单独导出；原始事件始终本地留存。附件引用会保留，附件字节暂不传输。</p><button class="button primary" data-action="nav" data-page="migrate">返回迁移工作台${icon('chevron')}</button></div></div></section>`;
+}
+async function refresh() { const draft = state.settings; state = await rpc<Snapshot>('snapshot'); if (Object.keys(draft).length) state.settings = draft; render(); }
+async function act(task: () => Promise<void>, success?: string) {
+  if (busy) return;
+  busy = true; render();
+  try { await task(); if (success) { notice = success; isError = false; } }
+  catch (error) { notice = String(error); isError = true; }
+  finally { busy = false; try { const draft = state.settings; state = await rpc<Snapshot>('snapshot'); if (Object.keys(draft).length) state.settings = draft; } catch (error) { notice = String(error); isError = true; } render(); }
+}
+root.addEventListener('input', event => {
+  const field = event.target as HTMLInputElement;
+  if (['directory', 'binary', 'generation', 'server', 'dataHome', 'passwordFile', 'archive', 'snapshots'].includes(field.id)) {
+    state.settings = { ...state.settings, ...config() }; connected = '';
+  }
+});
+root.addEventListener('click', async event => {
+  const button = (event.target as Element).closest<HTMLElement>('[data-action]');
+  if (!button) return;
+  event.preventDefault(); const action = button.dataset.action;
+  if (action === 'nav') { page = button.dataset.page!; render(); return; }
+  if (action === 'dismiss') { notice = ''; render(); return; }
+  if (action === 'detail') { selected = button.dataset.id!; render(); return; }
+  if (busy) return;
+  if (action === 'browse') {
+    const file = await open({ directory: button.dataset.kind === 'directory', multiple: false });
+    if (typeof file === 'string') { (document.getElementById(button.dataset.field!) as HTMLInputElement).value = file; state.settings = { ...state.settings, ...config() }; connected = ''; }
+    return;
+  }
+  if (action === 'connect') { const payload = config(); await act(async () => { const target = await rpc<{version: string; generation: string}>('connect', payload); connected = target.version; }, 'OpenCode 已连接，可以开始迁移。'); }
+  if (action === 'detect') {
+    await act(async () => {
+      const result = await rpc<{ candidates: { binary: string; version: string }[] }>('detect');
+      if (!result.candidates.length) throw new Error('没有找到 OpenCode，请手动选择已安装的可执行文件。');
+      state.settings.binary = result.candidates[0].binary;
+      connected = '';
+      notice = `找到 ${result.candidates.length} 个 OpenCode，已选择 ${result.candidates[0].version}。请检测并连接。`; isError = false;
+    });
+  }
+  if (action === 'start') { if (!connected) { notice = '请先检测并连接当前 OpenCode 目标。'; isError = true; render(); return; } const payload = { port: Number(val('port')), autoImport: checked('autoImport') }; await act(async () => { await rpc('start', payload); }, '本地接收已启动。请在 DSH 运行 /oc-migrate all。'); }
+  if (action === 'stop') await act(async () => { await rpc('stop'); }, '本地接收已停止。已保存的迁移记录仍然保留。');
+  if (action === 'refresh') await act(refresh);
+  if (action === 'importFile') {
+    if (!connected) { notice = '请先检测并连接当前 OpenCode 目标。'; isError = true; render(); return; }
+    const file = await open({ multiple: false, filters: [{ name: 'DSH 迁移包', extensions: ['json'] }] });
+    if (typeof file !== 'string') return;
+    await act(async () => { const report = await rpc<Job>('importFile', { file }); selected = report.id; page = 'jobs'; if (report.status === 'failed') throw new Error(report.error || '导入失败，请查看任务'); }, '导入完成，历史正文已回读核对。');
+  }
+  if (action === 'retry' || action === 'rollback') {
+    if (action === 'rollback' && !await confirm('回滚将删除本任务创建且未继续使用的 OpenCode 会话。原始导出包会保留，可再次导入。确认回滚？', { title: '回滚迁移任务', kind: 'warning' })) return;
+    await act(async () => { const report = await rpc<Job>(action, { id: button.dataset.id }); if (report.status === 'failed') throw new Error(report.error || '任务未完成'); }, action === 'rollback' ? '回滚完成，原始导出包已保留。' : '导入与回读验证完成。');
+  }
+});
+render();
+listen<{type: string}>('desktop-event', event => {
+  if (event.payload.type === 'backend-exited') { notice = '迁移内核已退出，请重新打开应用。'; isError = true; render(); }
+  else if (!busy) refresh().catch(error => { notice = String(error); isError = true; render(); });
+}).catch(console.error);
+refresh().catch(error => { notice = String(error); isError = true; render(); });
+// While a long native import is running, the persisted report still exposes progress.
+setInterval(() => { if (!busy && page === 'jobs' && !document.hidden) refresh().catch(console.error); }, 5000);

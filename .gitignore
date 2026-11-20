@@ -4,3 +4,11 @@ artifacts/
 *.tgz
 .DS_Store
 .env
+
+desktop/dist/
+src-tauri/target/
+src-tauri/gen/
+src-tauri/binaries/*
+src-tauri/resources/
+
+.*.bun-build
