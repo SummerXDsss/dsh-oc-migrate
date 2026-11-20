@@ -44,3 +44,9 @@ test('反向项目元数据必须匹配原件 cwd；拒绝空白名称，未写�
 test('原生 DSH 日志已被移除时，回滚仍清理本任务拥有的工作区成员',async t=>{
  const root=await setup(t),store=new ReverseStore({state:root+'/jobs',dshRoot:root+'/sessions'}),raw=convertBundle(fixture(),{directory:root,generation:'v2'})[0].transcript;raw.migrationProject={name:'中文项目',directory:root};const report=await store.receive(raw,{importNow:true});assert.equal(report.status,'imported',report.error);await rm(report.sessions[0].file);await store.rollback(report.id);await assert.rejects(access(root+'/storages/workspace.json'));
 });
+test('DSH 首次冷列表即有标题缓存，仅含 title 投影，回滚一并移除',async t=>{
+ const root=await setup(t),store=new ReverseStore({state:root+'/jobs',dshRoot:root+'/sessions'}),raw=convertBundle(fixture(),{directory:root,generation:'v2'})[0].transcript;const report=await store.receive(raw,{importNow:true});assert.equal(report.status,'imported',report.error);
+ const file=report.titleCache.file,cache=JSON.parse(await readFile(file)),captured=await (await import('../packages/plugin/src/local-reader.mjs')).captureLocalSession({file:report.sessions[0].file});
+ assert.equal(cache.version,7);assert.equal(cache.record.identity.cwd,root);assert.equal(cache.record.identity.formatVersion,4);assert.deepEqual(Object.keys(cache.record.rows),['title']);assert.equal(cache.record.rows.title.ver,1);assert.equal(cache.record.rows.title.val,raw.info.title);assert.equal(cache.record.rows.title.seq,captured.session.events.at(-1).seq);
+ await store.receive(raw,{importNow:true});await store.rollback(report.id);await assert.rejects(access(file));
+});

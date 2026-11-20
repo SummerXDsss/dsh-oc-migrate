@@ -6,7 +6,7 @@ import { MigrationStore, atomicJSON } from './store.mjs';
 import { convertOpenCode } from '../../core/src/reverse.mjs';
 import { digest } from '../../core/src/protocol.mjs';
 import { captureLocalSession, findLocalSessions } from '../../plugin/src/local-reader.mjs';
-import { registerDshWorkspace, rollbackDshWorkspace, assertDshOffline } from './dsh-workspaces.mjs';
+import { registerDshWorkspace, rollbackDshWorkspace, registerDshTitleCache, rollbackDshTitleCache, assertDshOffline } from './dsh-workspaces.mjs';
 
 // Same project-key algorithm as DSH session-persistence-jsonl@0.2.1-rc.2.
 export function dshProjectKey(cwd) {
@@ -42,6 +42,7 @@ export class ReverseStore extends MigrationStore {
       if (typeof p.name !== 'string' || !p.name.trim() || p.name.length > 500 || typeof p.directory !== 'string' || !path.isAbsolute(p.directory) || typeof cwd !== 'string' || path.normalize(p.directory) !== path.normalize(cwd)) throw new Error('项目名称或目录与 OpenCode 原件不一致');
       await assertDshOffline();
     }
+    await assertDshOffline();
     await mkdir(this.config.dshRoot, { recursive: true, mode: 0o700 });
     const dshRoot = await realpath(this.config.dshRoot);
     const encoding = await detectDshEncoding(dshRoot, this.config.encoding);
@@ -79,7 +80,7 @@ export class ReverseStore extends MigrationStore {
     if (report.direction !== 'oc-to-dsh') throw new Error('迁移方向不匹配');
     const bytes = await this.expected(dir, report), item = report.sessions[0];
     const source = JSON.parse(await readFile(path.join(dir, 'source.json'), 'utf8'));
-    if (source.migrationProject) await assertDshOffline();
+    await assertDshOffline();
     report.status = 'importing'; await atomicJSON(path.join(dir, 'report.json'), report);
     try {
       await detectDshEncoding(report.destination, report.encoding);
@@ -107,6 +108,7 @@ export class ReverseStore extends MigrationStore {
       // Validate the disk representation with the DSH-owned codec again.
       const original = convertOpenCode(JSON.parse(await readFile(path.join(dir, 'source.json'), 'utf8')));
       if (digest(captured.session.events) !== digest(original.session.events)) throw new Error('DSH 事件回读不匹配');
+      report.titleCache = await registerDshTitleCache(dir, report, original.session);
       report.workspace = await registerDshWorkspace(dir, report, source.migrationProject);
       item.status = 'verified'; report.status = 'imported'; delete report.error;
     } catch (error) { report.status = 'failed'; report.error = error.message; }
@@ -117,7 +119,7 @@ export class ReverseStore extends MigrationStore {
     return this.locked(id, async dir => {
       const report = await this.read(id); await this.expected(dir, report);
       const item = report.sessions[0];
-      if (!item.owned) { await rollbackDshWorkspace(dir, report); report.status = 'rolled-back'; item.status = 'preserved-existing'; }
+      if (!item.owned) { await rollbackDshTitleCache(dir, report); await rollbackDshWorkspace(dir, report); report.status = 'rolled-back'; item.status = 'preserved-existing'; }
       else {
         const scan = await findLocalSessions(report.destination);
         if (scan.errors.length) throw new Error('DSH 子会话检查失败，保留历史');
@@ -131,9 +133,9 @@ export class ReverseStore extends MigrationStore {
           // A surviving native lease means DSH has taken write ownership at least once.
           // Do not unlink its stable lock inode or race a resumed native writer.
           if (entries.some(name => name !== path.basename(item.file))) throw new Error('DSH 已打开此会话或目录存在其他数据，保留历史');
-          await rollbackDshWorkspace(dir, report);
+          await rollbackDshTitleCache(dir, report); await rollbackDshWorkspace(dir, report);
           await unlink(item.file); await rmdir(path.dirname(item.file));
-        } else await rollbackDshWorkspace(dir, report);
+        } else { await rollbackDshTitleCache(dir, report); await rollbackDshWorkspace(dir, report); }
         item.status = 'rolled-back'; report.status = 'rolled-back';
       }
       await atomicJSON(path.join(dir, 'report.json'), report); return report;

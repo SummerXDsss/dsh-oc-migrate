@@ -64,3 +64,29 @@ export async function rollbackDshWorkspace(dir,report){
   await assertDshOffline();if(digest(await bytes(r.file))!==digest(current))throw Error('DSH 工作区在回滚时变化，已保留现有文件');await atomicJSON(r.file,data);
  });
 }
+
+// DSH's cold sidebar performs zero-I/O title reads from this derived v7 record.
+// A durable session/title event alone only becomes visible after opening a session.
+// Seed the title row, not execution/model/tool projections. Existing native records
+// are never replaced; the Session log remains authoritative on every cold replay.
+export async function registerDshTitleCache(dir,report,session){
+ await assertDshOffline();
+ const id=report.sessions[0].sessionID,file=path.join(path.dirname(report.destination),'storages/session_projcache/sessions',id+'.json');
+ const identity={formatVersion:4,createdAt:session.header.createdAt,...(session.header.cwd?{cwd:session.header.cwd}:{}),isSeeded:false,inheritedEventCount:0};
+ const value={version:7,record:{identity,rows:{title:{ver:1,seq:session.events.at(-1)?.seq??-1,val:session.title}}}};
+ const before=await bytes(file);
+ if(before){const current=JSON.parse(before);if(current.version!==7||digest(current.record?.identity)!==digest(identity)||current.record?.rows?.title?.val!==session.title)throw Error('DSH 标题缓存已存在且内容不同，已保留现有文件');return {file,status:'existing-verified'};}
+ await mkdir(path.dirname(file),{recursive:true,mode:0o700});
+ const content=Buffer.from(JSON.stringify(value,null,2)+'\n'),receipt={file,hash:digest(content),owned:true};
+ await atomicJSON(path.join(dir,'title-cache-receipt.json'),receipt);
+ const temp=file+'.'+randomUUID()+'.tmp';await writeFile(temp,content,{flag:'wx',mode:0o600});
+ try{await assertDshOffline();await (await import('node:fs/promises')).link(temp,file);}finally{await unlink(temp);}
+ return {...receipt,status:'verified'};
+}
+export async function rollbackDshTitleCache(dir,report){
+ const raw=await bytes(path.join(dir,'title-cache-receipt.json'));if(!raw)return;const receipt=JSON.parse(raw);
+ const expected=path.join(path.dirname(report.destination),'storages/session_projcache/sessions',report.sessions[0].sessionID+'.json');
+ if(receipt.file!==expected)throw Error('DSH 标题缓存回滚目标不匹配');
+ await assertDshOffline();const current=await bytes(expected);
+ if(receipt.owned&&current&&digest(current)===receipt.hash)await unlink(expected);
+}

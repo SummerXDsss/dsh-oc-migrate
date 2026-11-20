@@ -44,6 +44,10 @@ for (const [generation, binary] of [['v1', process.env.OPENCODE_V1_BIN], ['v2', 
         try {
           await scope.await();
           assert.ok((await ctx.sessionPersistence.list()).some(row => row.header.id === session.header.id));
+          const {checkpointRecord,SessionProjectionCache}=await load('dsh-session-projection-cache'),{SessionProjectionRegistry}=await load('dsh-session-projection'),{titleProjectionDefinition}=await load('dsh-session-title');
+          const cached=JSON.parse(await (await import('node:fs/promises')).readFile(report.titleCache.file,'utf8'));assert.equal(cached.version,7);const record=checkpointRecord.parse(cached.record);
+          const registry=new SessionProjectionRegistry(ctx);registry.register(titleProjectionDefinition);const reader=Object.create(SessionProjectionCache.prototype);reader.ctx=ctx;reader.table={get:()=>record};
+          assert.equal(reader.cachedSnapshot(session.header,['title']).values.title,session.title);
           const handle = await ctx.sessionPersistence.open(session.header.id, 'read');
           try {
             const native = await handle.read();
@@ -52,7 +56,7 @@ for (const [generation, binary] of [['v1', process.env.OPENCODE_V1_BIN], ['v2', 
             assert.ok(JSON.stringify(restored.deriveMessages()).includes('原始文件内容'));
           } finally { await handle.close(); }
         } finally { await scope.dispose(); }
-        t.diagnostic('native DSH persistence 0.2.1-rc.2: cold list/read/deriveMessages PASS');
+        t.diagnostic('native DSH persistence 0.2.1-rc.2: cold list/title-cache/read/deriveMessages PASS');
       }
       const project = sources.find(s => s.imported.sessions[0].sessionID === info.id) ?? (info.id === child.info.id ? sources[0] : null); assert.ok(project);
       assert.equal(session.header.cwd, original.info.location?.directory ?? original.info.directory);
