@@ -109,3 +109,23 @@ test('同一项目的符号链接路径合并；长消息预览截断有标识�
   for(const args of [{offset:-1},{limit:0},{limit:51}])await assert.rejects(app.request('catalogPreview',{scanID:c.id,id:e.id,...args}),/分页参数无效/);
   assert.deepEqual(await readFile(first.file),first.bytes);
 });
+
+test('名称识别读取 DSH 工作区注册表，而非仅显示目录末段；旧日志无标题时标明首条消息', async t => {
+  const {app,add,home,client}=await setup(t);const source=await add('registry-name','folder-slug');
+  const lines=(await readFile(source.file,'utf8')).trimEnd().split('\n').map(JSON.parse);lines.pop();await writeFile(source.file,lines.map(JSON.stringify).join('\n')+'\n');
+  const storage=path.join(home,'.dsh/storages');await mkdir(storage,{recursive:true});
+  const bytes=JSON.stringify({unit:{name:'workspace',version:2},tables:{workspaces:{w:{path:path.join(home,'folder-slug'),title:'正式项目中文名',sessionIds:['registry-name']}}}});
+  await writeFile(path.join(storage,'workspace.json'),bytes);
+  const c=await app.request('scanCatalog');assert.equal(c.projects[0].name,'正式项目中文名');assert.equal(c.projects[0].nameOrigin,'dsh-workspace');
+  assert.equal(c.entries[0].title,'请检查迁移链路，保留中文。');assert.equal(c.entries[0].titleOrigin,'first-message');assert.equal(client.sessions.size,0);
+  assert.equal(await readFile(path.join(storage,'workspace.json'),'utf8'),bytes);
+  await writeFile(path.join(storage,'workspace.json'),'{');const fallback=await app.request('scanCatalog');assert.equal(fallback.entries.length,1);assert.equal(fallback.projects[0].name,'folder-slug');assert.match(fallback.errors[0].error,/项目暂按原始路径显示/);
+});
+test('OpenCode 项目自定义名及导出标题优先，不把 global 项目合并为根目录', async t => {
+  const {app,add,client,home}=await setup(t,'oc-to-dsh');await add('native-names','folder-slug');
+  const transcript=[...client.sessions.values()][0];transcript.info.projectID='native-project';transcript.info.title='原生对话中文标题';
+  client.listProjects=async()=>[{id:'native-project',name:'原生项目自定义名',canonical:path.join(home,'folder-slug')}];
+  let c=await app.request('scanCatalog',{direction:'oc-to-dsh'});assert.equal(c.entries[0].title,'原生对话中文标题');assert.equal(c.entries[0].titleOrigin,'source');assert.equal(c.projects[0].name,'原生项目自定义名');
+  transcript.info.projectID='global';client.listProjects=async()=>[{id:'global',name:'Global',canonical:'/'}];
+  c=await app.request('scanCatalog',{direction:'oc-to-dsh'});assert.equal(c.projects[0].name,'folder-slug');assert.notEqual(c.projects[0].directory,'/');
+});

@@ -23,6 +23,13 @@ const parseJSON = stdout => {
   if (start < 0) throw new Error('OpenCode 未返回 JSON transcript');
   return JSON.parse(stdout.slice(start));
 };
+const parseArray = stdout => {
+  const start = stdout.search(/^\s*\[/m);
+  if (start < 0) throw new Error('OpenCode 未返回 JSON 列表');
+  const value = JSON.parse(stdout.slice(start));
+  if (!Array.isArray(value)) throw new Error('OpenCode 列表格式异常');
+  return value;
+};
 
 
 // No directory/project/parent/archive filter: include every project, fork and archive.
@@ -67,6 +74,11 @@ export async function createCliClient(config) {
   return {
     generation, version,
     identity: digest({ adapter: 'cli', binary, directory: config.directory, dataHome: env.XDG_DATA_HOME ?? '', db: env.OPENCODE_DB ?? '', generation }),
+    async listProjects() {
+      return generation === 'v1'
+        ? parseArray((await run(['db', 'SELECT id, name, worktree FROM project ORDER BY id', '--format', 'json', ...flags])).stdout)
+        : parseArray((await run(['api', 'GET', '/api/project', ...flags])).stdout);
+    },
     async listAll({ pageSize = 100 } = {}) {
       if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100) throw new Error('OpenCode 分页大小需要 1–100');
       if (generation === 'v2') return listSessionPages(async cursor => parseJSON((await run(['api', 'GET', `/api/session?limit=${pageSize}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`, ...flags])).stdout));
@@ -117,6 +129,13 @@ export function createHttpClient(config) {
   return {
     generation: 'v2', version: 'v2-http',
     identity: digest({ adapter: 'http', server: url.origin, directory: config.directory, generation: 'v2' }),
+    async listProjects() {
+      const response = await request('/api/project');
+      if (!response.ok) throw new Error(`OpenCode projects HTTP ${response.status}`);
+      const value = await response.json();
+      if (!Array.isArray(value)) throw new Error('OpenCode 项目列表格式异常');
+      return value;
+    },
     async listAll({ pageSize = 100 } = {}) {
       if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100) throw new Error('OpenCode 分页大小需要 1–100');
       return listSessionPages(async cursor => {

@@ -1,13 +1,13 @@
 import path from 'node:path';
-import { readFile, realpath } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { atomicJSON } from '../../middleware/src/store.mjs';
 import { digest } from '../../core/src/protocol.mjs';
 import { findLocalSessions, captureLocalSession } from '../../plugin/src/local-reader.mjs';
+import { nonEmpty, canonicalDirectory, readDshWorkspaces, workspaceFor, conversationLabel } from './source-labels.mjs';
 
 const directionOf = input => input.direction === 'oc-to-dsh' ? 'oc-to-dsh' : 'dsh-to-oc';
 const settingsOf = input => Object.fromEntries(['direction', 'sourceRoot', 'dshRoot', 'binary', 'directory', 'dataHome'].filter(key => typeof input[key] === 'string').map(key => [key, input[key]]));
-const titleOf = (value, fallback) => typeof value === 'string' && value.trim() ? value : fallback;
 function dshMessages(session) {
   return session.events.filter(e => /^(user|assistant|system)\/message$/.test(e.type) || e.type === 'tool/result').map(e => {
     const message = e.type === 'user/message' ? e.data : e.data.message;
@@ -43,32 +43,46 @@ export class ConversationCatalog {
     progress();
     let client;
     if (direction === 'oc-to-dsh' && plan.target) client = await this.quick.makeClient({ ...plan.target, directory: this.quick.home, dataHome: config.dataHome || '' });
+    let nativeProjects = [], workspaces = [];
+    if (direction === 'dsh-to-oc') {
+      const metadata = await readDshWorkspaces(plan.sourceRoot); workspaces = metadata.records;
+      if (metadata.error) errors.push({ file: metadata.file, error: metadata.error + '；项目暂按原始路径显示' });
+    } else if (client?.listProjects) {
+      try { nativeProjects = await client.listProjects(); }
+      catch (error) { errors.push({ error: '项目名称读取失败：' + error.message + '；项目暂按原始路径显示' }); }
+    }
     for (const item of sources) {
       try {
         let entry;
         if (direction === 'dsh-to-oc') {
           const captured = await captureLocalSession(item), s = captured.session;
           const messages = s.events.filter(e => /^(user|assistant|system)\/message$/.test(e.type) || e.type === 'tool/result');
-          entry = { sourceID: s.header.id, title: titleOf(s.title, s.header.id), directory: s.header.cwd ?? '', created: s.header.createdAt,
+          const directory = s.header.cwd ?? '', workspace = directory ? workspaceFor(workspaces, s.header.id, await canonicalDirectory(directory)) : undefined;
+          const titleMessages = nonEmpty(s.title) ? [] : s.events.filter(e => e.type === 'user/message').map(e => ({ role: 'user', text: e.data.content.filter(b => b.type === 'text').map(b => b.text).join('\n') }));
+          entry = { sourceID: s.header.id, ...conversationLabel(s.title, titleMessages, s.header.id), directory, created: s.header.createdAt,
+            projectDirectory: workspace?.directory, projectName: workspace?.name, projectNameOrigin: workspace?.name ? 'dsh-workspace' : 'directory',
             updated: s.events.reduce((n, e) => Math.max(n, e.time), s.header.createdAt), messageCount: messages.length,
             activeCount: s.surfaceEventSeqs.length, eventCount: s.events.length, parentID: s.header.parentSession ?? null,
             fingerprint: captured.hash, source: item };
         } else {
           const transcript = await client.export(item.id);
           if (!transcript) throw new Error('扫描期间对话已删除，请重新扫描');
-          entry = { sourceID: item.id, title: titleOf(transcript.info.title, item.id), directory: transcript.info.location?.directory ?? transcript.info.directory ?? '',
+          const nativeProject = nativeProjects.find(project => project.id !== 'global' && project.id === transcript.info.projectID);
+          const title = nonEmpty(transcript.info.title) ?? nonEmpty(item.title);
+          const titleMessages = title ? [] : transcript.messages.filter(record => (record.info?.role ?? record.type) === 'user').map(record => ({ role: 'user', text: record.text ?? (record.parts ?? record.content ?? []).filter(b => b.type === 'text').map(b => b.text).join('\n') }));
+          entry = { sourceID: item.id, ...conversationLabel(title, titleMessages, item.id), directory: transcript.info.location?.directory ?? transcript.info.directory ?? '',
+            projectDirectory: nativeProject?.canonical ?? nativeProject?.worktree, projectName: nonEmpty(nativeProject?.name), projectNameOrigin: nonEmpty(nativeProject?.name) ? 'opencode-project' : 'directory',
             created: transcript.info.time?.created ?? 0, updated: transcript.info.time?.updated ?? 0, messageCount: transcript.messages.length,
             parentID: transcript.info.parentID ?? null, archived: !!transcript.info.time?.archived, fingerprint: digest(transcript), source: { id: item.id } };
         }
-        let projectDirectory = entry.directory;
-        if (path.isAbsolute(projectDirectory)) { try { projectDirectory = await realpath(projectDirectory); } catch { projectDirectory = path.normalize(projectDirectory); } }
+        const projectDirectory = await canonicalDirectory(entry.projectDirectory || entry.directory);
         entries.push({ ...entry, projectDirectory, id: digest({ origin, source: direction === 'dsh-to-oc' ? item.file : item.id }), projectID: digest({ direction, directory: projectDirectory }) });
       } catch (error) { errors.push({ file: item.file ?? item.id, error: error.message }); }
       finished++; progress();
     }
     const projects = new Map();
     for (const entry of entries) {
-      if (!projects.has(entry.projectID)) projects.set(entry.projectID, { id: entry.projectID, directory: entry.projectDirectory, name: entry.projectDirectory ? path.basename(entry.projectDirectory) || entry.projectDirectory : '未关联项目', count: 0 });
+      if (!projects.has(entry.projectID)) projects.set(entry.projectID, { id: entry.projectID, directory: entry.projectDirectory, name: entry.projectName || (entry.projectDirectory ? path.basename(entry.projectDirectory) || entry.projectDirectory : '未关联项目'), nameOrigin: entry.projectNameOrigin, count: 0 });
       projects.get(entry.projectID).count++;
     }
     const { sessions: _, ...summary } = plan;

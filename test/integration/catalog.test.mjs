@@ -20,20 +20,27 @@ for (const [generation, binary] of [['v1', process.env.OPENCODE_V1_BIN], ['v2', 
       const directory = path.join(root,name); await mkdir(directory,{recursive:true});
       if(i<2) { execFileSync('git',['init','-q',directory]); execFileSync('git',['-C',directory,'-c','user.name=fixture','-c','user.email=fixture@example.com','commit','--allow-empty','-qm',name]); }
       const session = fixture({id:'catalog-'+i}).sessions[0];session.header.cwd=directory;session.title='管理器中文-'+i;
+      session.events.push({seq:session.events.length,time:session.header.createdAt+100,type:'session/title',data:{title:session.title,messageSeqs:[],source:{kind:'user'}}});
       const file=path.join(root,'.dsh/sessions',String(i),'session.v4.jsonl');await mkdir(path.dirname(file),{recursive:true});
       await writeFile(file,[{type:'session',...session.header},...session.events].map(e=>JSON.stringify(e)).join('\n')+'\n');sources.push(session);
     }
+    await mkdir(path.join(root,'.dsh/storages'),{recursive:true});
+    await writeFile(path.join(root,'.dsh/storages/workspace.json'),JSON.stringify({unit:{name:'workspace',version:2},tables:{workspaces:Object.fromEntries(['ALPHA','BETA'].map(name=>[name,{path:path.join(root,name),title:'正式项目-'+name,sessionIds:sources.filter(s=>s.header.cwd===path.join(root,name)).map(s=>s.header.id)}]))}}));
     const client=await makeClient({directory:root});
     let catalog=await app.request('scanCatalog');assert.equal(catalog.entries.length,3);assert.equal(catalog.projects.length,2);assert.equal((await client.listAll()).length,0);
     const chosen=catalog.entries.find(e=>e.sourceID==='catalog-1');
+    assert.equal(chosen.title,'管理器中文-1');assert.equal(catalog.projects.find(p=>p.id===chosen.projectID).name,'正式项目-BETA');
     const preview=await app.request('catalogPreview',{scanID:catalog.id,id:chosen.id});assert.match(JSON.stringify(preview),/原始文件内容/);
     await app.request('startSelected',{scanID:catalog.id,ids:[chosen.id]});await app.quick.done;
     assert.equal(app.quick.current.imported,1,JSON.stringify(app.quick.current.errors));assert.equal((await client.listAll()).length,1);
+    assert.equal((await client.export((await client.listAll())[0].id)).info.title,'管理器中文-1');
     await app.request('rollback',{id:app.quick.current.jobs[0].id});assert.equal((await client.listAll()).length,0);
     for(const source of sources) {
       const converted=convertBundle({...fixture(),sessions:[source]},{directory:source.header.cwd,generation})[0];const file=path.join(root,source.header.id+'.json');await writeFile(file,JSON.stringify(converted.transcript));
       const projectClient=await makeClient({directory:source.header.cwd});await projectClient.import(file,converted.transcript);
     }
+    const nativeProjects=await client.listProjects();assert(Array.isArray(nativeProjects));
+    for(const source of sources){const actual=await client.export((await client.listAll()).find(info=>info.directory===source.header.cwd || info.location?.directory===source.header.cwd)?.id || (await client.listAll())[0].id);assert(nativeProjects.some(project=>project.id===actual.info.projectID));}
     const target=path.join(root,'reverse-target');catalog=await app.request('scanCatalog',{direction:'oc-to-dsh',dshRoot:target});assert.equal(catalog.entries.length,3);assert.equal(catalog.projects.length,2);
     const selected=catalog.entries[1];assert.match(JSON.stringify(await app.request('catalogPreview',{scanID:catalog.id,id:selected.id})),/原始文件内容/);
     await app.request('startSelected',{scanID:catalog.id,ids:[selected.id]});await app.quick.done;
