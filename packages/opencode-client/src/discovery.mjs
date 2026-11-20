@@ -21,7 +21,7 @@ export function binaryCandidates(home, { platform = process.platform, env = proc
   return unique([...gui, p.join(home, '.opencode', 'bin', platform === 'win32' ? 'opencode.exe' : 'opencode'),
     ...npmRoots.flatMap(root => ['@opencode/cli', 'opencode-ai'].map(pkg => p.join(root, 'node_modules', pkg, 'bin', 'opencode.exe'))),
     ...(platform === 'win32' ? [p.join(home, 'scoop', 'shims', 'opencode.exe')] : [p.join(home, '.local', 'bin', 'opencode'), p.join(home, '.npm-global', 'bin', 'opencode'), '/usr/local/bin/opencode', '/usr/bin/opencode', ...(platform === 'darwin' ? ['/opt/homebrew/bin/opencode'] : [])]),
-    platform === 'win32' ? 'opencode.exe' : 'opencode']);
+    ...(platform === 'win32' ? ['opencode.cmd'] : []), platform === 'win32' ? 'opencode.exe' : 'opencode']);
 }
 // Electron 2.x stages its own CLI here even when the desktop app is not in PATH.
 // Read only the known stable app's immediate version directories, never recurse.

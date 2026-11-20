@@ -1,6 +1,6 @@
 {
   "name": "dsh-oc-migrate",
-  "version": "0.5.4",
+  "version": "0.5.5",
   "description": "DeepSeek Harness ↔ OpenCode 1.x / 2.x 双向本地对话迁移",
   "type": "module",
   "license": "MIT",

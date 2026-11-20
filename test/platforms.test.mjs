@@ -9,7 +9,7 @@ test('Windows 发现：2.x resources、旧 GUI、npm 原生包、Scoop 与中文
  const home='C:\\Users\\张 三',env={LOCALAPPDATA:'D:\\本地 数据',APPDATA:'E:\\漫游',ProgramFiles:'C:\\Program Files'};
  const rows=binaryCandidates(home,{platform:'win32',env});
  for(const suffix of ['D:\\本地 数据\\Programs\\ai.opencode.desktop\\resources\\opencode-cli.exe','C:\\Program Files\\OpenCode\\resources\\opencode-cli.exe','E:\\漫游\\npm\\node_modules\\@opencode\\cli\\bin\\opencode.exe','E:\\漫游\\npm\\node_modules\\opencode-ai\\bin\\opencode.exe','C:\\Users\\张 三\\scoop\\shims\\opencode.exe'])assert(rows.includes(suffix),suffix);
- assert.equal(desktopCliRoots(home,{platform:'win32',env})[0],'E:\\漫游\\ai.opencode.desktop\\cli');assert.equal(rows.at(-1),'opencode.exe');
+ assert.equal(desktopCliRoots(home,{platform:'win32',env})[0],'E:\\漫游\\ai.opencode.desktop\\cli');assert.equal(rows.at(-1),'opencode.exe');assert(rows.includes('opencode.cmd'));
  assert.equal(new Set(rows).size,rows.length);assert(!rows.some(x=>x.includes('/Applications')));
 });
 test('普通 Linux：GUI resources、用户 CLI、系统 CLI 与 XDG_CONFIG_HOME',()=>{

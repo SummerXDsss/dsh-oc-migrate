@@ -46,7 +46,7 @@ export class DesktopService {
     const candidates = [];
     for (const binary of names) {
       try {
-        const client = await this.makeClient({ binary, directory: home, timeout: 15000 });
+        const client = await this.makeClient({ binary, directory: home, timeout: process.platform === 'win32' ? 30000 : 15000 });
         candidates.push({ binary, version: client.version, generation: client.generation });
       } catch { /* Other candidates remain discoverable when one binary is absent. */ }
     }

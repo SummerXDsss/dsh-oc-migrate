@@ -7,7 +7,7 @@
 - 使用 Release 中的 NSIS `.exe` 安装包，默认仅为当前用户安装，不要求管理员权限；界面提供简体中文。
 - 安装器内嵌 WebView2 引导程序；若系统尚无 WebView2，安装器会联网安装该运行时，迁移数据仍只在本机处理。不是完全离线的 WebView2 安装包。
 - 自动查找 OpenCode 2.x 桌面端 `%APPDATA%\ai.opencode.desktop\cli\<版本>-x64\opencode-cli.exe`、常见安装目录的 `resources\opencode-cli.exe`、旧版 GUI、`.opencode\bin`、npm 原生包、Scoop 与 PATH。
-- 从高级选择器指定 npm `opencode.cmd` / `.ps1` 时，读取相邻官方包的原生 `opencode.exe`，而非交给 `cmd.exe` 拼接执行。中文、空格与 `&` 不会拆成命令。自定义 npm prefix 不在候选范围时可直接选择原生 `.exe`。
+- 从高级选择器指定 npm `opencode.cmd` / `.ps1` 时，读取相邻官方包的原生 `opencode.exe`，而非交给 `cmd.exe` 拼接执行。中文、空格与 `&` 不会拆成命令。自定义 npm prefix 在 PATH 中时也会解析其 `opencode.cmd`；特殊布局可直接选择原生 `.exe`。
 - Windows 首次扫描允许较长的版本检测时间。目标文件短暂被杀毒软件/索引器占用时有限重试；持续占用则保留旧文件并报告错误，不先删除原件。
 - DSH 默认 `%USERPROFILE%\.dsh\sessions`；若设置 `DSH_HOME`，则使用该目录下的 `sessions`。也支持在高级设置里选择自定义位置。
 
@@ -50,7 +50,7 @@ sh ./start-linux.sh './DSH OpenCode Migrate.AppImage'
 ## CI 与验收口径
 
 - Windows 2022 原生 runner 与 Ubuntu 22.04 runner：Node 22/24 单元、Web 构建、打包测试；Node 24 再跑真实 OpenCode 1.18.31 / 2.3.2 双向、选择、sidecar 和回滚回归。
-- 原生回归将 CLI 与测试目录放进包含中文、空格的路径；Windows 同时隔离 HOME、USERPROFILE、APPDATA、LOCALAPPDATA 和 XDG 目录，不接触原有历史。
+- 原生回归将 CLI 与测试目录放进包含中文、空格的路径；Windows 同时隔离 HOME、USERPROFILE、APPDATA、LOCALAPPDATA、DSH_HOME 和 XDG 目录，不接触原有历史。
 - Release 构建两份 macOS DMG、Windows NSIS、Linux DEB/RPM/AppImage；六份安装包全部齐备且回归成功后才发布，另附 Linux 启动脚本、插件包与 SHA256SUMS。
 - Windows/macOS/Linux 的模拟路径单元测试、Linux 容器原生测试、GUI 真机窗口点验是不同证据，不互相冒充。GitHub 因账户额度未启动的 job 不算通过。
 

@@ -14,7 +14,7 @@ for (const target of targets) {
     const root = await mkdtemp(path.join(os.tmpdir(), 'dsh-desktop-native-'));
     t.after(() => rm(root, { recursive: true, force: true }));
     const directory = path.join(root, 'project'); await mkdir(directory);
-    const env = { ...process.env, HOME: root, USERPROFILE: root, APPDATA: path.join(root,'roaming'), LOCALAPPDATA: path.join(root,'local'), XDG_DATA_HOME: path.join(root, 'data'), XDG_STATE_HOME: path.join(root, 'state'), XDG_CONFIG_HOME: path.join(root, 'config'), XDG_CACHE_HOME: path.join(root, 'cache'), OPENCODE_DB: path.join(root, 'opencode.db'), OPENCODE_DISABLE_AUTOUPDATE: '1', OPENCODE_DISABLE_MODELS_FETCH: '1', OPENCODE_DISABLE_PROJECT_CONFIG: '1', OPENCODE_CONFIG_CONTENT: '{}', DSH_OC_SIDECAR: '1', DSH_OC_APP_DATA: path.join(root, 'app') };
+    const env = { ...process.env, HOME: root, DSH_HOME: path.join(root,'.dsh'), USERPROFILE: root, APPDATA: path.join(root,'roaming'), LOCALAPPDATA: path.join(root,'local'), XDG_DATA_HOME: path.join(root, 'data'), XDG_STATE_HOME: path.join(root, 'state'), XDG_CONFIG_HOME: path.join(root, 'config'), XDG_CACHE_HOME: path.join(root, 'cache'), OPENCODE_DB: path.join(root, 'opencode.db'), OPENCODE_DISABLE_AUTOUPDATE: '1', OPENCODE_DISABLE_MODELS_FETCH: '1', OPENCODE_DISABLE_PROJECT_CONFIG: '1', OPENCODE_CONFIG_CONTENT: '{}', DSH_OC_SIDECAR: '1', DSH_OC_APP_DATA: path.join(root, 'app') };
     const compiled = process.env.DSH_OC_TEST_SIDECAR;
     const child = spawn(compiled || process.execPath, compiled ? [] : ['packages/desktop/src/service.mjs'], { env, stdio: ['pipe', 'pipe', 'pipe'] });
     let error = ''; child.stderr.on('data', chunk => error += chunk);

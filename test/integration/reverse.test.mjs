@@ -13,7 +13,7 @@ import { fixture } from '../fixture.mjs';
 for (const [generation, binary] of [['v1', process.env.OPENCODE_V1_BIN], ['v2', process.env.OPENCODE_V2_BIN]]) {
   test(`真实 ${generation} 全项目与分支 → DSH 原生严格回放 → ${generation} 往返及回滚`, { skip: !binary, timeout: 300000 }, async t => {
     const root = await mkdtemp(path.join(os.tmpdir(), `dsh-bidirectional-${generation}-`)); t.after(() => rm(root, { recursive: true, force: true }));
-    const env = { HOME: root, USERPROFILE: root, APPDATA: path.join(root,'roaming'), LOCALAPPDATA: path.join(root,'local'), XDG_DATA_HOME: path.join(root, 'data'), XDG_STATE_HOME: path.join(root, 'state'), XDG_CONFIG_HOME: path.join(root, 'config'), XDG_CACHE_HOME: path.join(root, 'cache'), OPENCODE_DB: path.join(root, 'opencode.db'), OPENCODE_DISABLE_AUTOUPDATE: '1', OPENCODE_DISABLE_MODELS_FETCH: '1', OPENCODE_CONFIG_CONTENT: '{}', OPENCODE_DISABLE_PROJECT_CONFIG: '1' };
+    const env = { HOME: root, DSH_HOME: path.join(root,'.dsh'), USERPROFILE: root, APPDATA: path.join(root,'roaming'), LOCALAPPDATA: path.join(root,'local'), XDG_DATA_HOME: path.join(root, 'data'), XDG_STATE_HOME: path.join(root, 'state'), XDG_CONFIG_HOME: path.join(root, 'config'), XDG_CACHE_HOME: path.join(root, 'cache'), OPENCODE_DB: path.join(root, 'opencode.db'), OPENCODE_DISABLE_AUTOUPDATE: '1', OPENCODE_DISABLE_MODELS_FETCH: '1', OPENCODE_CONFIG_CONTENT: '{}', OPENCODE_DISABLE_PROJECT_CONFIG: '1' };
     const sources = [];
     for (const name of ['alpha', 'beta']) {
       const directory = path.join(root, name); await mkdir(directory);

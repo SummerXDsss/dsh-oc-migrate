@@ -1,3 +1,15 @@
+# 0.5.5 · Windows 与普通 Linux 桌面适配
+
+- Windows 自动发现 OpenCode 2.x 桌面端暂存 CLI、常见 resources 安装目录、npm 原生程序与 Scoop；npm 脚本入口解析为原生 exe，不依赖 shell 拼接。
+- Windows 安装器采用当前用户模式、中文界面与 WebView2 引导程序；sidecar 使用 x64 baseline。文件占用采用有限退避重试，持续失败仍保留目标原件。
+- Linux 自动发现 XDG 下的桌面 CLI 和常见发行包目录；进程检查不依赖 macOS 专属参数，DSH_HOME 遵循官方规则。
+- Linux 提供 DEB、RPM 和 AppImage；附 start-linux.sh，在缺少 FUSE 时使用解包运行模式。Linux GUI 构建基线为 Ubuntu 22.04 / WebKitGTK 4.1，不依赖 WSL、Node 或 Bun。
+- CI 增加 Windows 2022 / Ubuntu 22.04 原生回归、Node 22/24 矩阵及包含中文/空格路径的双版本迁移与回滚。六份安装包与回归全部成功才发布；配置完成不代表 runner 或 GUI 已通过。
+
+[平台安装说明](https://github.com/SummerXDsss/dsh-oc-migrate/blob/main/docs/PLATFORMS.md) · [验收记录](https://github.com/SummerXDsss/dsh-oc-migrate/blob/main/docs/DESKTOP_VALIDATION.md)。
+
+---
+
 # 0.5.4 · 方向切换与指定对话导入
 
 - 工作台与项目/对话管理器共用方向控件，支持 DSH → OpenCode / OpenCode → DSH；记住上次方向，运行期间锁定。
