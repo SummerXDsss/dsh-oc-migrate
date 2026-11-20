@@ -3,16 +3,11 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { findLocalSessions, captureLocalSession } from '../../plugin/src/local-reader.mjs';
 import { FORMAT, digest } from '../../core/src/protocol.mjs';
+import { ReverseStore, detectDshEncoding } from '../../middleware/src/reverse.mjs';
 import { atomicJSON } from '../../middleware/src/store.mjs';
 
-export function binaryCandidates(home) {
-  const gui = process.platform === 'darwin'
-    ? ['/Applications/OpenCode.app/Contents/Resources/opencode-cli', path.join(home, 'Applications/OpenCode.app/Contents/Resources/opencode-cli')]
-    : process.platform === 'win32'
-      ? [path.join(process.env.LOCALAPPDATA || path.join(home, 'AppData/Local'), 'OpenCode/opencode-cli.exe'), path.join(process.env.LOCALAPPDATA || path.join(home, 'AppData/Local'), 'Programs/OpenCode/opencode-cli.exe')]
-      : ['/opt/OpenCode/opencode-cli', '/usr/lib/opencode/opencode-cli', path.join(home, '.local/bin/opencode')];
-  return [...new Set([...gui, path.join(home, `.opencode/bin/opencode${process.platform === 'win32' ? '.exe' : ''}`), ...(process.platform === 'win32' ? [] : ['/opt/homebrew/bin/opencode', '/usr/local/bin/opencode']), process.platform === 'win32' ? 'opencode.exe' : 'opencode'])];
-}
+import { binaryCandidates } from '../../opencode-client/src/discovery.mjs';
+export { binaryCandidates };
 
 export class QuickMigration {
   constructor({ root, home, makeClient, store, emit, candidates }) {
@@ -30,6 +25,7 @@ export class QuickMigration {
     return this;
   }
   async discover(input = {}) {
+    if (input.direction === 'oc-to-dsh') return this.discoverReverse(input);
     const sourceRoot = input.sourceRoot || path.join(this.home, '.dsh/sessions');
     const scan = await findLocalSessions(sourceRoot);
     const binaries = input.binary ? [input.binary] : this.candidates;
@@ -44,12 +40,71 @@ export class QuickMigration {
     return { sourceRoot, total: scan.files.length, errors: scan.errors, target,
       directory: input.directory || path.join(this.home, 'OpenCode/DSH 历史'), preserveProjects: !input.directory };
   }
+  async discoverReverse(input) {
+    const dshRoot = input.dshRoot || path.join(this.home, '.dsh/sessions');
+    if (!path.isAbsolute(dshRoot)) throw new Error('DSH sessions 需要绝对路径');
+    let target = null;
+    for (const binary of input.binary ? [input.binary] : this.candidates) {
+      try { const client = await this.makeClient({ binary, directory: this.home, dataHome: input.dataHome || '', timeout: 7000 });
+        target = { binary, version: client.version, generation: client.generation }; break;
+      } catch { /* Next installed binary. */ }
+    }
+    if (!target) return { total: 0, target, sourceRoot: '', directory: dshRoot, errors: [] };
+    const client = await this.makeClient({ ...target, directory: this.home, dataHome: input.dataHome || '' });
+    const sessions = await client.listAll();
+    await detectDshEncoding(dshRoot);
+    return { direction: 'oc-to-dsh', total: sessions.length, sessions, target, sourceRoot: target.binary, directory: dshRoot, preserveProjects: true, errors: [] };
+  }
+  async startReverse(input) {
+    if (this.active) throw new Error('一键迁移正在进行');
+    for (const key of ['dshRoot', 'dataHome']) if (input[key] && !path.isAbsolute(input[key])) throw new Error(`${key} 需要绝对路径`);
+    const plan = await this.discoverReverse(input);
+    if (!plan.target) throw new Error('未找到可用的 OpenCode');
+    if (!plan.total) throw new Error('OpenCode 中尚未找到对话');
+    const id = randomUUID();
+    await mkdir(path.join(this.root, 'quick-runs', id, 'sources'), { recursive: true, mode: 0o700 });
+    this.active = true; this.cancelled = false;
+    this.current = { id, direction: 'oc-to-dsh', status: 'running', stage: '正在读取 OpenCode 全部项目的历史', total: plan.total,
+      finished: 0, imported: 0, nativeSessions: 0, skipped: 0, sourceRoot: plan.sourceRoot, target: plan.target, directory: plan.directory,
+      createdAt: new Date().toISOString(), jobs: [], errors: [] };
+    try { await this.save(); } catch (error) { this.active = false; throw error; }
+    this.done = this.executeReverse(plan, input).catch(async error => {
+      this.current.status = 'failed'; this.current.errors.push({ error: error.message }); await this.save();
+    }).finally(() => { this.active = false; });
+    return this.current;
+  }
+  async executeReverse(plan, input) {
+    const client = await this.makeClient({ ...plan.target, directory: this.home, dataHome: input.dataHome || '' });
+    const store = new ReverseStore({ state: path.join(this.root, 'jobs'), dshRoot: plan.directory });
+    for (const [index, item] of plan.sessions.entries()) {
+      if (this.cancelled) break;
+      this.current.stage = `正在导出并核对第 ${index + 1} / ${plan.total} 个 OpenCode 对话`; await this.save();
+      try {
+        const source = await client.export(item.id);
+        if (!source) throw new Error('会话在导出前已删除，请重新扫描');
+        const hash = digest(source);
+        await atomicJSON(path.join(this.root, 'quick-runs', this.current.id, 'sources', `${index}.json`), source);
+        const after = await client.export(item.id);
+        if (!after || digest(after) !== hash) throw new Error('OpenCode 对话正在变化，请在响应结束后重新迁移');
+        const report = await store.receive(source, { importNow: true });
+        this.current.jobs.push({ id: report.id, sourceID: item.id, sha256: hash, status: report.status, directory: report.sessions[0]?.directory });
+        this.emit({ type: 'jobs-changed', id: report.id });
+        if (report.status !== 'imported') throw new Error(report.error || 'DSH 原生日志回读未通过');
+        this.current.imported++; this.current.nativeSessions++;
+      } catch (error) { this.current.errors.push({ file: item.id, error: error.message }); }
+      this.current.finished++; await this.save();
+    }
+    this.current.status = this.cancelled ? 'cancelled' : this.current.errors.length ? 'partial' : 'completed';
+    this.current.stage = this.cancelled ? '已在当前对话完成后停止' : this.current.errors.length ? '迁移结束，部分记录需要处理' : '已写入 DSH 原生历史；重新打开 DSH 查看';
+    this.current.completedAt = new Date().toISOString(); await this.save();
+  }
   async save() {
     await atomicJSON(path.join(this.root, 'quick-latest.json'), this.current);
     await atomicJSON(path.join(this.root, 'quick-runs', this.current.id, 'report.json'), this.current);
     this.emit({ type: 'quick-progress', quick: this.current });
   }
   async start(input = {}) {
+    if (input.direction === 'oc-to-dsh') return this.startReverse(input);
     if (this.active) throw new Error('一键迁移正在进行');
     for (const key of ['sourceRoot', 'directory', 'dataHome']) if (input[key] && !path.isAbsolute(input[key])) throw new Error(`${key} 需要绝对路径`);
     const plan = await this.discover(input);

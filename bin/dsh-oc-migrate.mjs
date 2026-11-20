@@ -7,14 +7,18 @@ import os from 'node:os';
 import { convertBundle } from '../packages/core/src/convert.mjs';
 import { createCliClient, createHttpClient } from '../packages/opencode-client/src/index.mjs';
 import { MigrationStore, atomicJSON } from '../packages/middleware/src/store.mjs';
+import { ReverseStore } from '../packages/middleware/src/reverse.mjs';
+import { binaryCandidates } from '../packages/opencode-client/src/discovery.mjs';
+import { digest } from '../packages/core/src/protocol.mjs';
 import { createReceiver } from '../packages/middleware/src/server.mjs';
 
-const help = `dsh-oc-migrate 0.2.0 — DeepSeek Harness → OpenCode 1.x / 2.x
+const help = `dsh-oc-migrate 0.4.0 — DeepSeek Harness ↔ OpenCode 1.x / 2.x
 
   init [--state DIR] [--token-file FILE]              创建本地接收令牌
   serve --directory DIR --token-file FILE [--auto-import]
   convert BUNDLE --directory DIR --out DIR --generation v1|v2
   import BUNDLE --directory DIR [--state DIR]         本地文件直接导入
+  to-dsh [EXPORT.json] [--dsh-root DIR]              反向迁移；不指定文件则导出本机全部 OpenCode 历史
   jobs [--state DIR]                                 查看任务
   retry JOB_ID --directory DIR [--state DIR]          重试导入
   rollback JOB_ID --directory DIR [--state DIR]       只回滚正文未改变的迁移会话
@@ -29,7 +33,7 @@ async function main() {
   const { values: args, positionals } = parseArgs({ allowPositionals: true, options: {
     help: { type: 'boolean', short: 'h' }, state: { type: 'string' }, directory: { type: 'string' }, out: { type: 'string' },
     'token-file': { type: 'string' }, port: { type: 'string', default: '48765' }, binary: { type: 'string' },
-    generation: { type: 'string', default: 'auto' }, 'data-home': { type: 'string' }, server: { type: 'string' },
+    'dsh-root': { type: 'string' }, generation: { type: 'string', default: 'auto' }, 'data-home': { type: 'string' }, server: { type: 'string' },
     'password-file': { type: 'string' }, username: { type: 'string' }, 'auto-import': { type: 'boolean' },
     provider: { type: 'string' }, model: { type: 'string' }, 'no-archive': { type: 'boolean' }, 'no-state-snapshots': { type: 'boolean' },
   } });
@@ -43,6 +47,34 @@ async function main() {
     console.log(`已创建令牌文件：${tokenFile}`); return;
   }
   if (command === 'jobs') { console.log(JSON.stringify(await new MigrationStore({ state }).list(), null, 2)); return; }
+  if (['retry', 'rollback'].includes(command)) {
+    const report = await new MigrationStore({ state }).read(input);
+    if (report.direction === 'oc-to-dsh') { console.log(JSON.stringify(await new ReverseStore({ state })[command === 'retry' ? 'import' : 'rollback'](input), null, 2)); return; }
+  }
+  if (command === 'to-dsh') {
+    const store = new ReverseStore({ state, dshRoot: path.resolve(args['dsh-root'] ?? path.join(os.homedir(), '.dsh/sessions')) });
+    if (input) {
+      const report = await store.receive(JSON.parse(await readFile(input, 'utf8')), { importNow: true });
+      console.log(JSON.stringify(report, null, 2)); if (report.status !== 'imported') process.exitCode = 1; return;
+    }
+    let client;
+    for (const binary of args.binary ? [args.binary] : binaryCandidates(os.homedir())) {
+      try { client = await createCliClient({ binary, directory: os.homedir(), dataHome: args['data-home'], generation: args.generation }); break; }
+      catch { /* Try the next installed client. */ }
+    }
+    if (!client) throw new Error('未找到可用的 OpenCode');
+    const reports = [], errors = [], sessions = await client.listAll();
+    for (const session of sessions) {
+      try {
+        const source = await client.export(session.id);
+        if (!source || digest(source) !== digest(await client.export(session.id))) throw new Error('会话正在变化，请等待响应结束后重试');
+        const report = await store.receive(source, { importNow: true }); reports.push(report);
+        if (report.status !== 'imported') errors.push({ id: session.id, error: report.error });
+      } catch (error) { errors.push({ id: session.id, error: error.message }); }
+    }
+    console.log(JSON.stringify({ total: sessions.length, reports, errors }, null, 2));
+    if (errors.length) process.exitCode = 1; return;
+  }
   if (!['serve', 'convert', 'import', 'retry', 'rollback'].includes(command)) throw new Error(`未知命令：${command}`);
   if (!args.directory) throw new Error('请用 --directory 指定 OpenCode 目标项目');
   const directory = path.resolve(args.directory);

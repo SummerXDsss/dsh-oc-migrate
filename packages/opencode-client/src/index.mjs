@@ -24,6 +24,26 @@ const parseJSON = stdout => {
   return JSON.parse(stdout.slice(start));
 };
 
+
+// No directory/project/parent/archive filter: include every project, fork and archive.
+export async function listSessionPages(fetchPage) {
+  const result = new Map(), cursors = new Set();
+  let cursor;
+  do {
+    const page = await fetchPage(cursor);
+    if (!Array.isArray(page?.data)) throw new Error('OpenCode 会话列表格式异常');
+    for (const item of page.data) {
+      if (typeof item.id !== 'string') throw new Error('OpenCode 会话列表缺少 id');
+      if (result.has(item.id)) throw new Error('会话列表在读取期间变化，请在 OpenCode 空闲时重试');
+      result.set(item.id, item);
+    }
+    cursor = page.cursor?.next;
+    if (cursor && (typeof cursor !== 'string' || cursors.has(cursor))) throw new Error('OpenCode 会话分页游标重复');
+    if (cursor) cursors.add(cursor);
+  } while (cursor);
+  return [...result.values()];
+}
+
 export async function createCliClient(config) {
   const binary = config.binary ?? 'opencode';
   const env = { ...process.env, ...config.env };
@@ -46,6 +66,14 @@ export async function createCliClient(config) {
   return {
     generation, version,
     identity: digest({ adapter: 'cli', binary, directory: config.directory, dataHome: env.XDG_DATA_HOME ?? '', db: env.OPENCODE_DB ?? '', generation }),
+    async listAll() {
+      if (generation === 'v2') return listSessionPages(async cursor => parseJSON((await run(['api', 'GET', `/api/session?limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`, ...flags])).stdout));
+      const { stdout } = await run(['db', 'SELECT id, directory, parent_id, title, time_updated, time_archived FROM session ORDER BY id', '--format', 'json', ...flags]);
+      const start = stdout.search(/^\s*\[/m);
+      const rows = JSON.parse(stdout.slice(start));
+      if (start < 0 || !Array.isArray(rows)) throw new Error('OpenCode 1.x 会话列表格式异常');
+      return rows;
+    },
     async export(sessionID) {
       try { return parseJSON((await run([...prefix, 'export', sessionID, ...flags])).stdout); }
       catch (error) {
@@ -87,6 +115,13 @@ export function createHttpClient(config) {
   return {
     generation: 'v2', version: 'v2-http',
     identity: digest({ adapter: 'http', server: url.origin, directory: config.directory, generation: 'v2' }),
+    async listAll() {
+      return listSessionPages(async cursor => {
+        const response = await request(`/api/session?limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`);
+        if (!response.ok) throw new Error(`OpenCode list HTTP ${response.status}`);
+        return response.json();
+      });
+    },
     async export(sessionID) {
       const response = await request(`/api/experimental/session/${encodeURIComponent(sessionID)}/export`);
       if (response.status === 404) return null;

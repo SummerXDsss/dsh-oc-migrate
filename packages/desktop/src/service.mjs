@@ -5,6 +5,7 @@ import os from 'node:os';
 import readline from 'node:readline';
 import { pathToFileURL } from 'node:url';
 import { MigrationStore, atomicJSON } from '../../middleware/src/store.mjs';
+import { ReverseStore } from '../../middleware/src/reverse.mjs';
 import { createReceiver } from '../../middleware/src/server.mjs';
 import { createCliClient, createHttpClient } from '../../opencode-client/src/index.mjs';
 import { QuickMigration, binaryCandidates } from './quick.mjs';
@@ -108,6 +109,11 @@ export class DesktopService {
     return this.observedStore(this.target).receive(JSON.parse(await readFile(file, 'utf8')), { importNow: true });
   }
   async jobAction(action, { id }) {
+    const report = await this.jobs.read(id);
+    if (report.direction === 'oc-to-dsh') {
+      try { return await new ReverseStore({ state: this.jobs.root })[action](id); }
+      finally { this.emit({ type: 'jobs-changed', id }); }
+    }
     // Reconnect to the original target, not the currently selected project.
     const file = path.join(this.jobs.jobPath(id), 'desktop-target.json');
     const config = JSON.parse(await readFile(file, 'utf8'));

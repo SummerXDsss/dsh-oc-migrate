@@ -20,5 +20,10 @@ try {
     run(process.execPath, [cli, 'convert', path.join(root, 'examples/synthetic-export.json'), '--directory', directory, '--generation', generation, '--out', out]);
     assert.equal((await readdir(out)).filter(file => file.endsWith('.json')).length, 2);
   }
-  console.log('package-smoke: PASS (plugin entry, executable CLI, v1/v2 conversion)');
+  const exported = (await readdir(path.join(temp, 'v2'))).find(file => file.endsWith('.json'));
+  const receipt = JSON.parse(run(process.execPath, [cli, 'to-dsh', path.join(temp, 'v2', exported), '--dsh-root', path.join(temp, 'dsh'), '--state', path.join(temp, 'reverse-jobs')]));
+  assert.equal(receipt.status, 'imported', receipt.error);
+  const rollback = JSON.parse(run(process.execPath, [cli, 'rollback', receipt.id, '--state', path.join(temp, 'reverse-jobs')]));
+  assert.equal(rollback.status, 'rolled-back');
+  console.log('package-smoke: PASS (plugin entry, executable CLI, v1/v2 conversion, native DSH import/rollback)');
 } finally { await rm(temp, { recursive: true, force: true }); }
