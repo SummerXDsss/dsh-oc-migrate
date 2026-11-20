@@ -1,3 +1,9 @@
+export const PERMISSION_HELP = '系统可能会出现权限弹窗，请授予对话所在文件夹必要的文件读取权限，再重新扫描。若没有弹窗，请检查该文件夹的访问权限。';
+export function isFilePermissionError(value: unknown): boolean {
+  const text = value instanceof Error ? value.message : typeof value === 'object' && value !== null ? String((value as { code?: unknown }).code ?? '') + ' ' + String((value as { message?: unknown }).message ?? '') : String(value ?? '');
+  return /\b(?:EACCES|EPERM)\b|permission denied|operation not permitted|access (?:is )?denied|access to (?:the )?path .*denied|(?:没有|无|缺少|需要|不足|拒绝).{0,8}(?:读取|访问)?权限|权限(?:不足|被拒绝)|拒绝访问|不允许的操作/i.test(text);
+}
+
 export type CatalogEntry = { id: string; sourceID: string; title: string; titleOrigin?: 'source' | 'first-message' | 'empty'; alias?: string; starred?: boolean; projectID: string; directory: string; messageCount: number; activeCount?: number; eventCount?: number; updated: number; parentID?: string; archived?: boolean };
 export type Catalog = { id: string; direction: string; input: Record<string, string>; scannedAt: string; plan: { target: null | { version: string }; sourceRoot: string }; entries: CatalogEntry[]; projects: { id: string; name: string; alias?: string; directory: string; count: number }[]; errors: { file?: string; error: string }[] };
 export type Preview = { id: string; offset: number; total: number; messages: { role: string; text: string; active: boolean; seq?: number; truncated?: boolean }[] };

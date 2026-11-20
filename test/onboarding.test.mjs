@@ -8,6 +8,7 @@ const moduleURL = async name => dataURL(compile(await readFile(new URL('../deskt
 const guideURL = await moduleURL('onboarding'), navURL = await moduleURL('navigation'), catalogURL = await moduleURL('catalog');
 const { GUIDE_KEY, needsGuide, completeGuide, guideStep, guideHTML } = await import(guideURL);
 const { APP_VERSION, sidebarHTML, GITHUB_LINKS } = await import(navURL);
+const { isFilePermissionError } = await import(catalogURL);
 const freshStorage = () => { const map = new Map(); return { map, getItem: key => map.get(key) ?? null, setItem: (key, value) => map.set(key, value) }; };
 
 test('首次教程只显示一次；完成或跳过后保存；写入失败不阻塞操作', () => {
@@ -33,7 +34,7 @@ test('独立高级导航与 GitHub 快捷入口；侧栏不再渲染旧说明和
 });
 
 let sequence = 0;
-async function controller(t, {seen=false,quick=null,scanError=false}={}) {
+async function controller(t, {seen=false,quick=null,scanError=false,partialErrors=[]}={}) {
   const storage=freshStorage();if(seen)completeGuide(storage);
   const handlers={},fields=new Map(),calls=[];
   const root={innerHTML:'',querySelectorAll:()=>[],querySelector:()=>null,addEventListener:(type,fn)=>handlers[type]=fn};
@@ -43,12 +44,12 @@ async function controller(t, {seen=false,quick=null,scanError=false}={}) {
   globalThis.__onboardingHarness={
     invoke:async(command,args)=>{calls.push({command,...args});if(command==='open_github')return;
       const{method,payload}=args;if(method==='snapshot')return structuredClone(snapshot);if(method==='discoverQuick')return{total:1,target:{version:'fixture'}};
-      if(method==='scanCatalog'){if(scanError)throw Error('请检查对话位置后重新扫描');snapshot.catalog={id:'scan',direction:payload.direction,input:payload,plan:{target:{version:'fixture'},sourceRoot:'/fixture'},projects:[],entries:[],errors:[],scannedAt:new Date().toISOString()};return structuredClone(snapshot.catalog);}throw Error(method);},
+      if(method==='scanCatalog'){if(scanError)throw Error(typeof scanError === 'string' ? scanError : '请检查对话位置后重新扫描');snapshot.catalog={id:'scan',direction:payload.direction,input:payload,plan:{target:{version:'fixture'},sourceRoot:'/fixture'},projects:[],entries:[],errors:partialErrors,scannedAt:new Date().toISOString()};return structuredClone(snapshot.catalog);}throw Error(method);},
     listen:async()=>{},open:async()=>null,confirm:async()=>true
   };
   t.after(()=>{for(const[key,value]of Object.entries(previous)){if(value===undefined)delete globalThis[key];else globalThis[key]=value;}});
   let js=compile(await readFile(new URL('../desktop/src/main.ts',import.meta.url),'utf8')).replace(/^import .*;$/gm,'').replace(/setInterval\(/g,'void(');
-  js=`import {needsGuide,completeGuide,guideHTML,guideStep} from '${guideURL}';import {APP_VERSION,sidebarHTML,pageInfo} from '${navURL}';import {catalogHTML,newCatalogView,filteredEntries,directionControlHTML,normalizeDirection,quickInputFor,resolveConversationIDs,selectionPayload} from '${catalogURL}';const {invoke,listen,open,confirm}=globalThis.__onboardingHarness;\n`+js+`\nexport const inspect=()=>({page,tutorialStep,tutorialChoice,direction,state}); // ${sequence++}`;
+  js=`import {needsGuide,completeGuide,guideHTML,guideStep} from '${guideURL}';import {APP_VERSION,sidebarHTML,pageInfo} from '${navURL}';import {PERMISSION_HELP,isFilePermissionError,catalogHTML,newCatalogView,filteredEntries,directionControlHTML,normalizeDirection,quickInputFor,resolveConversationIDs,selectionPayload} from '${catalogURL}';const {invoke,listen,open,confirm}=globalThis.__onboardingHarness;\n`+js+`\nexport const inspect=()=>({page,tutorialStep,tutorialChoice,direction,state}); // ${sequence++}`;
   const ui=await import(dataURL(js));await new Promise(resolve=>setImmediate(resolve));
   const click=async(action,data={})=>handlers.click({preventDefault(){},target:{closest:()=>({dataset:{action,...data}})}});
   return{ui,click,storage,calls,root,fields,handlers};
@@ -80,4 +81,24 @@ test('返回用户直接到工作台；已有进行中的迁移优先展示，�
 });
 test('完成过教程的启动不再自动显示，仍保留使用教程入口',async t=>{
   const h=await controller(t,{seen:true});assert.equal(h.ui.inspect().page,'migrate');assert.match(h.root.innerHTML,/使用教程/);assert(!h.calls.some(c=>c.method==='scanCatalog'));
+});
+
+test('扫描被系统拒绝时，明确提示可能出现弹窗和必要的文件读取权限', async t => {
+  const h=await controller(t,{scanError:'EACCES: permission denied, scandir /fixture/sessions'});
+  await h.click('guideStep',{step:'2'});await h.click('guideFinish');
+  assert.match(h.root.innerHTML,/还需要文件读取权限/);assert.match(h.root.innerHTML,/可能会出现权限弹窗/);assert.match(h.root.innerHTML,/必要的文件读取权限/);assert.match(h.root.innerHTML,/再重新扫描/);
+  assert(!h.calls.some(c=>c.method==='startQuick'||c.method==='startSelected'));
+});
+test('部分文件读取失败也提示权限；普通位置错误不误报权限', async t => {
+  const h=await controller(t,{partialErrors:[{file:'/fixture/one.jsonl',error:'EPERM: operation not permitted'}]});
+  await h.click('guideFinish');assert.match(h.root.innerHTML,/还需要文件读取权限/);
+});
+test('无权限错误不显示授权提示，教程提前说明系统可能询问', async t => {
+  const h=await controller(t,{scanError:true});await h.click('guideFinish');assert.doesNotMatch(h.root.innerHTML,/还需要文件读取权限/);
+  assert.match(guideHTML(1,'dsh-to-oc','choose'),/可能会出现权限弹窗.*必要的文件读取权限/);
+});
+
+test('识别各系统权限错误，不把未找到路径或普通连接错误当成授权问题', () => {
+  for(const error of ['EACCES: scandir /fixture','EPERM: open /fixture','Permission denied','Operation not permitted','Access is denied','拒绝访问','没有读取权限','文件权限不足',new Error('EACCES'),{code:'EPERM',message:'scandir'}]) assert.equal(isFilePermissionError(error),true,String(error));
+  for(const error of ['ENOENT: no such file','ECONNREFUSED','需要检查安装位置',null,undefined]) assert.equal(isFilePermissionError(error),false,String(error));
 });

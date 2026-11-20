@@ -53,7 +53,7 @@ test('真实前端事件：方向切换清空旧选择、保留隐藏设置；ID
   };
   t.after(()=>{for(const [key,value]of Object.entries(previous)){if(value===undefined)delete globalThis[key];else globalThis[key]=value;}});
   let js=compile(source).replace(/^import .*;$/gm,'').replace(/setInterval\(/g,'void(');
-  js=`import {needsGuide,completeGuide,guideHTML,guideStep} from '${guideURL}';import {APP_VERSION,sidebarHTML,pageInfo} from '${navURL}';import {catalogHTML,newCatalogView,filteredEntries,directionControlHTML,normalizeDirection,quickInputFor,resolveConversationIDs,selectionPayload} from '${catalogURL}';const {invoke,listen,open,confirm}=globalThis.__directionHarness;\n`+js+`\nexport const inspect=()=>({direction,catalogView,state,page,probing});`;
+  js=`import {needsGuide,completeGuide,guideHTML,guideStep} from '${guideURL}';import {APP_VERSION,sidebarHTML,pageInfo} from '${navURL}';import {PERMISSION_HELP,isFilePermissionError,catalogHTML,newCatalogView,filteredEntries,directionControlHTML,normalizeDirection,quickInputFor,resolveConversationIDs,selectionPayload} from '${catalogURL}';const {invoke,listen,open,confirm}=globalThis.__directionHarness;\n`+js+`\nexport const inspect=()=>({direction,catalogView,state,page,probing});`;
   const ui=await import(dataURL(js));await new Promise(resolve=>setImmediate(resolve));
   const click=async(action,data={})=>handlers.click({preventDefault(){},target:{closest:()=>({dataset:{action,...data}})}});
   const input=(id,value)=>handlers.input({target:{id,value,dataset:{}}});

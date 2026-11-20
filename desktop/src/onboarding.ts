@@ -28,7 +28,8 @@ export function guideHTML(current: number, direction: string, choice: GuideChoic
       <button class="guide-choice" data-action="guideChoice" data-choice="choose" aria-pressed="${choice === 'choose'}"><span class="choice-check" aria-hidden="true"></span><span><strong>先扫描，再挑选 <em>推荐</em></strong><small>先列出对话，不会开始迁移。可以按项目、标题查找和勾选。</small></span></button>
       <button class="guide-choice" data-action="guideChoice" data-choice="all" aria-pressed="${choice === 'all'}"><span class="choice-check" aria-hidden="true"></span><span><strong>全部搬走</strong><small>把找到的所有对话逐个搬过去。开始后，也可以停止。</small></span></button>
     </div>
-    <p class="guide-note">原工具里的对话会保留。教程里的选择不会自动开始迁移。</p>` : `
+    <p class="guide-note">原工具里的对话会保留。教程里的选择不会自动开始迁移。</p>
+    <p class="guide-note">扫描时，系统可能会出现权限弹窗。请授予对话文件夹必要的文件读取权限，再继续扫描。</p>` : `
     <p class="guide-description">这次要搬到 ${target}。完成后，用这三件事确认结果。</p>
     <ol class="guide-checklist">
       <li><span>1</span><div><strong>先看迁移结果</strong><p>工具会核对迁入的标题和正文。有问题的对话会单独列出来。</p></div></li>

@@ -4,7 +4,7 @@ import { open, confirm } from '@tauri-apps/plugin-dialog';
 import './style.css';
 import { needsGuide, completeGuide, guideHTML, guideStep, type GuideChoice } from './onboarding';
 import { APP_VERSION, sidebarHTML, pageInfo, type Page } from './navigation';
-import { catalogHTML, newCatalogView, filteredEntries, directionControlHTML, normalizeDirection, quickInputFor, resolveConversationIDs, selectionPayload, type Catalog, type Preview } from './catalog';
+import { PERMISSION_HELP, isFilePermissionError, catalogHTML, newCatalogView, filteredEntries, directionControlHTML, normalizeDirection, quickInputFor, resolveConversationIDs, selectionPayload, type Catalog, type Preview } from './catalog';
 
 type Job = { direction?: string; id: string; status: string; generation?: string; createdAt?: string; error?: string; workspace?: { warning?: string }; projectNames?: { warning?: string }[]; sessions?: { sessionID: string; title?: string; status: string; view?: string; warnings?: string[] }[] };
 type QuickRun = { selected?: boolean; direction?: string; id: string; status: string; stage: string; total: number; finished: number; imported: number; nativeSessions: number; skipped: number; errors: {file?: string; error: string}[]; target: {version: string}; jobs: {id?: string}[] };
@@ -49,13 +49,18 @@ function config() {
 function render() {
   const count = state.jobs.filter(j => j.status === 'imported').length;
   const info = pageInfo[page];
+  const permissionErrors = [isError ? notice : '', ...(plan?.errors ?? []).map(item => item.error),
+    ...(state.catalog?.direction === direction ? state.catalog.errors : []).map(item => item.error),
+    ...((state.quick?.direction ?? 'dsh-to-oc') === direction ? state.quick?.errors ?? [] : []).map(item => item.error),
+    state.jobs.find(job => job.id === selected)?.error];
+  const permissionHint = permissionErrors.some(isFilePermissionError) ? `<section class="permission-help" role="status"><strong>还需要文件读取权限</strong><p>${PERMISSION_HELP}</p></section>` : '';
   const advancedTabs = page === 'advanced' || page === 'plugin' ? `<nav class="advanced-tabs" aria-label="高级模式页面"><button data-action="nav" data-page="advanced" ${page === 'advanced' ? 'aria-current="page"' : ''}>位置与连接</button><button data-action="nav" data-page="plugin" ${page === 'plugin' ? 'aria-current="page"' : ''}>插件安装说明</button></nav>` : '';
   const body = page === 'guide' ? guideHTML(tutorialStep, direction, tutorialChoice) : page === 'migrate' ? migrate() : page === 'catalog' ? catalogHTML(state.catalog?.direction === direction ? state.catalog : null, catalogView, state.quick?.status === 'running' || probing, direction) : page === 'jobs' ? jobs() : page === 'advanced' ? advanced() : plugin();
   root.innerHTML = `${sidebarHTML(page, theme, state.jobs.length, icon)}<main>
     <header class="topbar"><span>DeepSeek Harness <span class="route-arrow">↔</span> OpenCode</span><span class="pill ${state.receiver ? 'live' : ''}"><i></i>${state.receiver ? '正在接收插件对话' : state.quick?.status === 'running' ? '正在迁移' : '无需额外配置'}</span></header>
     <div class="content"><div class="page-heading"><div class="eyebrow">${info.label}</div><h1 id="page-title" tabindex="-1">${info.title}</h1><p>${info.description}</p></div>
     ${notice ? `<div class="notice ${isError ? 'error' : 'success'}" role="${isError ? 'alert' : 'status'}"><span>${esc(notice)}</span><button data-action="dismiss" aria-label="关闭提示">×</button></div>` : ''}
-    ${advancedTabs}${body}${page === 'guide' ? '' : `<footer><span>${icon('check')} 支持 OpenCode 1.x / 2.x</span><span>${count} 个任务已核对通过</span></footer>`}</div>
+    ${permissionHint}${advancedTabs}${body}${page === 'guide' ? '' : `<footer><span>${icon('check')} 支持 OpenCode 1.x / 2.x</span><span>${count} 个任务已核对通过</span></footer>`}</div>
   </main><div class="working" ${busy ? '' : 'hidden'} role="status"><span class="spinner"></span>${esc(scanProgress || '正在处理，请稍候…')}</div>`;
   root.querySelectorAll<HTMLButtonElement>('button').forEach(button => { if (busy && !['nav', 'dismiss'].includes(button.dataset.action || '')) button.disabled = true; });
 }
