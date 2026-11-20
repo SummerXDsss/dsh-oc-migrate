@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile, stat } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, stat, chmod } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import os from 'node:os';
@@ -18,6 +18,7 @@ export class DesktopService {
   }
   async init() {
     await mkdir(this.root, { recursive: true, mode: 0o700 });
+    if (process.platform !== 'win32') await chmod(this.root, 0o700);
     this.tokenFile = path.join(this.root, 'receiver.token');
     try { await writeFile(this.tokenFile, randomBytes(32).toString('hex') + '\n', { mode: 0o600, flag: 'wx' }); }
     catch (error) { if (error.code !== 'EEXIST') throw error; }
@@ -46,6 +47,7 @@ export class DesktopService {
   }
   normalize(input) {
     if (!input || typeof input.directory !== 'string' || !path.isAbsolute(input.directory)) throw new Error('请选择 OpenCode 目标项目的绝对路径');
+    for (const field of ['dataHome', 'passwordFile']) if (input[field] && !path.isAbsolute(input[field])) throw new Error(`${field} 需要绝对路径`);
     if (input.server && input.generation === 'v1') throw new Error('OpenCode 1.x 请使用 CLI 方式连接');
     return { directory: path.normalize(input.directory), binary: input.binary || 'opencode',
       generation: input.generation || 'auto', server: input.server || '',
