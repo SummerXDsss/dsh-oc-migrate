@@ -18,3 +18,18 @@ test('Release 归集四平台嵌套 artifacts，缺失或重名时阻止发布',
   await writeFile(path.join(input, 'dmg', 'win.exe'), 'fixture');
   await assert.rejects(collectRelease(input, output), /collision/);
 });
+
+test('发布版本在 npm、CLI、Tauri 与 Rust 中保持一致，标题体现双向', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const read = name => readFile(new URL('../' + name, import.meta.url), 'utf8');
+  const pkg = JSON.parse(await read('package.json')), lock = JSON.parse(await read('package-lock.json'));
+  const tauri = JSON.parse(await read('src-tauri/tauri.conf.json'));
+  assert.equal(lock.version, pkg.version); assert.equal(lock.packages[''].version, pkg.version);
+  assert.equal(tauri.version, pkg.version);
+  assert.ok((await read('src-tauri/Cargo.toml')).includes(`version = "${pkg.version}"`));
+  assert.ok((await read('src-tauri/Cargo.lock')).includes(`name = "dsh-oc-migrate-desktop"\nversion = "${pkg.version}"`));
+  assert.ok((await read('bin/dsh-oc-migrate.mjs')).includes(`dsh-oc-migrate ${pkg.version} —`));
+  assert.ok((await read('desktop/src/main.ts')).includes(`v${pkg.version} · Tauri`));
+  assert.equal(tauri.app.windows[0].title, 'DSH ↔ OpenCode');
+  assert.match(await read('desktop/index.html'), /<title>DSH ↔ OpenCode<\/title>/);
+});
