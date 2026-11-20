@@ -36,8 +36,8 @@ jobs:
             bundles: nsis
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
         with:
           node-version: '24'
           cache: npm
@@ -64,8 +64,13 @@ jobs:
         run: |
           BIN="$PWD/src-tauri/binaries/migrate-backend-${{ matrix.target }}"
           if [[ "$RUNNER_OS" == "Windows" ]]; then BIN="$BIN.exe"; fi
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            APP="$PWD/src-tauri/target/${{ matrix.target }}/release/bundle/macos/DSH OpenCode Migrate.app"
+            codesign --verify --deep --strict "$APP"
+            BIN="$APP/Contents/MacOS/migrate-backend"
+          fi
           DSH_OC_TEST_SIDECAR="$BIN" node --test --test-name-pattern='sidecar JSONL' test/desktop.test.mjs
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7.0.2
         with:
           name: desktop-${{ matrix.target }}
           if-no-files-found: error
@@ -81,13 +86,13 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
         with:
           node-version: '24'
           cache: npm
       - run: npm ci
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8.0.2
         with:
           pattern: desktop-*
           path: release-assets

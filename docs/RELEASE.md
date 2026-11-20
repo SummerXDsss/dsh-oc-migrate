@@ -13,4 +13,4 @@
 - Windows：选择 x64 setup.exe。
 - Linux：选择 amd64.deb 或 amd64.AppImage。
 
-本版本没有开发者签名或自动更新。OpenCode 与 DSH 需要分别安装；应用中的插件连接页提供本机资源路径及配置。附件引用保留，附件字节暂不复制；DSH 已删除或未记录的历史不包含在导出中。
+macOS 包使用 ad-hoc 签名，尚未配置 Developer ID 公证；Windows 包没有开发者证书签名。本版本没有自动更新。OpenCode 与 DSH 需要分别安装；应用中的插件连接页提供本机资源路径及配置。附件引用保留，附件字节暂不复制；DSH 已删除或未记录的历史不包含在导出中。
