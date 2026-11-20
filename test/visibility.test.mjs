@@ -8,24 +8,24 @@ import { fixture, mockClient } from './fixture.mjs';
 async function setup(t, failV1=false) {
   const root=await mkdtemp(path.join(os.tmpdir(),'dsh-visible-'));t.after(()=>rm(root,{recursive:true,force:true}));
   const home=path.join(root,'home'),project=path.join(root,'project'),source=path.join(root,'sessions');await mkdir(home);await mkdir(project);
-  const clients=new Map();const makeClient=async config=>{
+  const clients=new Map(),events=[];const makeClient=async config=>{
     const generation=config.binary==='cli1'?'v1':'v2',key=generation+'|'+config.directory;
-    if(!clients.has(key)) { const client={...mockClient(generation),version:generation==='v1'?'1.18.31':'opencode v2.3.2',identity:key};if(failV1&&generation==='v1')client.import=async()=>{throw Error('fixture write failed');};clients.set(key,client); }
+    if(!clients.has(key)) { const client={...mockClient(generation),version:generation==='v1'?'1.18.31':'opencode v2.3.2',identity:key};if(generation==='v1')client.prepareStorage=async()=>{events.push('prepare-v1');};const original=client.import;client.import=async(...args)=>{events.push('import-'+generation);return original.apply(client,args);};if(failV1&&generation==='v1')client.import=async()=>{throw Error('fixture write failed');};clients.set(key,client); }
     return clients.get(key);
   };
   for(const id of ['chosen','unselected']) {const s=fixture({id}).sessions[0];s.header.cwd=project;const dir=path.join(source,id);await mkdir(dir,{recursive:true});await writeFile(path.join(dir,'session.v4.jsonl'),[{type:'session',...s.header,delegationDepth:0},...s.events].map(e=>JSON.stringify(e)+'\n').join(''));}
   const app=await new DesktopService({root:path.join(root,'app'),home,candidates:['gui2','another2','cli1'],makeClient}).init();t.after(()=>app.stop());
-  return{app,source,project,clients};
+  return{app,source,project,clients,events};
 }
 test('同机 1.x / 2.x 自动各选一个目标，不再只写 GUI 的一代',async t=>{
-  const{app,source}=await setup(t);const p=await app.request('discoverQuick',{sourceRoot:source});
-  assert.deepEqual(p.targets.map(x=>x.generation),['v2','v1']);assert.equal(p.target.binary,'gui2');assert.equal(p.targets.length,2);
+  const{app,source,events}=await setup(t);const p=await app.request('discoverQuick',{sourceRoot:source});
+  assert.deepEqual(p.targets.map(x=>x.generation),['v2','v1']);assert.equal(p.target.binary,'gui2');assert.equal(p.targets.length,2);assert.equal(events.length,0,'scan must not initialize storage');
   const one=await app.request('discoverQuick',{sourceRoot:source,binary:'cli1'});assert.equal(one.targets.length,1);assert.equal(one.target.generation,'v1');
 });
 test('指定一个对话在两代各自核对、去重和按原目标撤销；未选对话不混入',async t=>{
-  const{app,source,project,clients}=await setup(t);const c=await app.request('scanCatalog',{sourceRoot:source});const chosen=c.entries.find(x=>x.sourceID==='chosen');
+  const{app,source,project,clients,events}=await setup(t);const c=await app.request('scanCatalog',{sourceRoot:source});const chosen=c.entries.find(x=>x.sourceID==='chosen');
   await app.request('startSelected',{scanID:c.id,ids:[chosen.id]});await app.quick.done;
-  const r=app.quick.current;assert.equal(r.status,'completed',JSON.stringify(r.errors));assert.equal(r.imported,1);assert.equal(r.nativeSessions,2);assert.equal(r.jobs.length,2);
+  assert.equal(events[0],'prepare-v1');const r=app.quick.current;assert.equal(r.status,'completed',JSON.stringify(r.errors));assert.equal(r.imported,1);assert.equal(r.nativeSessions,2);assert.equal(r.jobs.length,2);
   for(const gen of ['v1','v2'])assert.equal(clients.get(gen+'|'+project).sessions.size,1);
   await app.request('startSelected',{scanID:c.id,ids:[chosen.id]});await app.quick.done;
   for(const gen of ['v1','v2'])assert.equal(clients.get(gen+'|'+project).sessions.size,1);

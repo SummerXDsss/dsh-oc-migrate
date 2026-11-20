@@ -138,7 +138,16 @@ export class QuickMigration {
   }
   cancel() { this.cancelled = true; return { requested: true }; }
   async execute(files, plan, input) {
-    const clients = new Map(), seen = new Map();
+    const clients = new Map(), seen = new Map(), unavailable = new Map();
+    const targets = plan.targets ?? [plan.target];
+    // Only migration initializes storage. Scanning stays read-only. A pristine
+    // shared DB must have the native 1.x schema before 2.x initializes it.
+    if (targets.length > 1) for (const target of targets.filter(t => t.generation === 'v1')) {
+      try {
+        const client = await this.makeClient({ ...target, directory: this.home, dataHome: input.dataHome || '' });
+        await client.prepareStorage?.();
+      } catch (error) { unavailable.set(target.binary, error.message); }
+    }
     for (const [index, item] of files.entries()) {
       if (this.cancelled) break;
       this.current.stage = `正在读取第 ${index + 1} / ${files.length} 个对话`; await this.save();
@@ -168,8 +177,9 @@ export class QuickMigration {
           if (!path.isAbsolute(directory)) directory = plan.directory;
           if (directory === plan.directory && !input.directory) await mkdir(directory, { recursive: true });
           const failures = [];
-          for (const target of plan.targets ?? [plan.target]) {
+          for (const target of targets) {
             try {
+              if (unavailable.has(target.binary)) throw new Error(unavailable.get(target.binary));
               const config = { binary: target.binary, generation: target.generation, directory, dataHome: input.dataHome || '', includeArchive: true, stateSnapshots: true };
               const key = target.generation + '\0' + target.binary + '\0' + directory;
               if (!clients.has(key)) clients.set(key, await this.makeClient(config));

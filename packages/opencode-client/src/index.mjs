@@ -96,6 +96,11 @@ export async function createCliClient(config) {
   const prefix = generation === 'v1' ? [] : ['session'];
   return {
     generation, version,
+    async prepareStorage() {
+      // Let the native 1.x migrator initialize legacy tables before 2.x creates
+      // a fresh shared database; never synthesize or directly mutate its schema.
+      if (generation === 'v1') await run(['db', 'SELECT 1 AS ready', '--format', 'json', ...flags]);
+    },
     identity: digest({ adapter: 'cli', binary, directory: config.directory, dataHome: env.XDG_DATA_HOME ?? '', db: env.OPENCODE_DB ?? '', generation }),
     storageIdentity: digest({ adapter: 'cli', binary, dataHome: env.XDG_DATA_HOME ?? '', db: env.OPENCODE_DB ?? '', generation }),
     async updateProjectName(id, name) {

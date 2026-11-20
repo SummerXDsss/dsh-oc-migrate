@@ -18,7 +18,7 @@ test('并存的真实 1.x CLI / 2.x：指定项目各自原生列表可见、正
  const app=await new DesktopService({root:path.join(root,'app'),home:root,candidates:bins,makeClient}).init();t.after(()=>app.stop());
  const c=await app.request('scanCatalog',{sourceRoot:sources});assert.equal(c.plan.targets.length,2);const chosen=c.entries.find(e=>e.sourceID==='chosen');
  await app.request('startSelected',{scanID:c.id,ids:[chosen.id]});await app.quick.done;const run=app.quick.current;assert.equal(run.status,'completed',JSON.stringify(run.errors));assert.equal(run.imported,1);assert.equal(run.nativeSessions,2);
- const rows=async(bin,gen)=>JSON.parse((await exec(bin,['session','list','--format','json','--max-count','100',gen==='v1'?'--pure':'--standalone'],{cwd:project,env,timeout:60000})).stdout);
+ const rows=async(bin,gen)=>JSON.parse((await exec(bin,['session','list','--format','json','--max-count','100',gen==='v1'?'--pure':'--standalone'],{cwd:project,env,timeout:60000})).stdout.trim()||'[]');
  for(const job of run.jobs){const report=await app.jobs.read(job.id),target=run.targets.find(x=>x.generation===report.generation),client=await makeClient({...target,directory:project});
    const list=await rows(target.binary,target.generation);assert(list.some(s=>s.id===report.sessions[0].sessionID),JSON.stringify({generation:target.generation,list}));
    const actual=await client.export(report.sessions[0].sessionID);assert.match(JSON.stringify(actual.messages),/原始文件内容/);assert.equal(actual.info.location?.directory??actual.info.directory,await realpath(project));
