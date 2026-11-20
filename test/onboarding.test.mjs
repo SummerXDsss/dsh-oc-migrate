@@ -34,7 +34,7 @@ test('独立高级导航与 GitHub 快捷入口；侧栏不再渲染旧说明和
 });
 
 let sequence = 0;
-async function controller(t, {seen=false,quick=null,scanError=false,partialErrors=[],planErrors=[]}={}) {
+async function controller(t, {seen=false,quick=null,scanError=false,partialErrors=[],planErrors=[],targets=[]}={}) {
   const storage=freshStorage();if(seen)completeGuide(storage);
   const handlers={},fields=new Map(),calls=[];
   const root={innerHTML:'',querySelectorAll:()=>[],querySelector:()=>null,addEventListener:(type,fn)=>handlers[type]=fn};
@@ -43,7 +43,7 @@ async function controller(t, {seen=false,quick=null,scanError=false,partialError
   globalThis.document={documentElement:{dataset:{}},querySelector:()=>root,getElementById:id=>fields.get(id)||null};globalThis.localStorage=storage;
   globalThis.__onboardingHarness={
     invoke:async(command,args)=>{calls.push({command,...args});if(command==='open_github')return;
-      const{method,payload}=args;if(method==='snapshot')return structuredClone(snapshot);if(method==='discoverQuick')return{total:planErrors.length?0:1,target:{version:'fixture'},errors:planErrors};
+      const{method,payload}=args;if(method==='snapshot')return structuredClone(snapshot);if(method==='discoverQuick')return{total:planErrors.length?0:1,target:{version:'fixture'},targets,errors:planErrors};
       if(method==='scanCatalog'){if(scanError)throw Error(typeof scanError === 'string' ? scanError : '请检查对话位置后重新扫描');snapshot.catalog={id:'scan',direction:payload.direction,input:payload,plan:{target:{version:'fixture'},sourceRoot:'/fixture'},projects:[],entries:[],errors:partialErrors,scannedAt:new Date().toISOString()};return structuredClone(snapshot.catalog);}throw Error(method);},
     listen:async()=>{},open:async()=>null,confirm:async()=>true
   };
@@ -107,4 +107,9 @@ test('权限拒绝不伪装成空历史；读取恢复后重新检测会清除�
   const errors=[{error:'EACCES: permission denied, scandir /fixture'}];const h=await controller(t,{planErrors:errors});
   await h.click('guideSkip');assert.match(h.root.innerHTML,/读取受阻，请先检查权限/);assert.match(h.root.innerHTML,/data-action="startQuick" disabled/);
   errors.splice(0);await h.click('probeQuick');assert.doesNotMatch(h.root.innerHTML,/还需要文件读取权限|读取受阻/);assert.match(h.root.innerHTML,/找到 1 个/);
+});
+
+test('迁移前明示两代独立历史，不承诺后续聊天自动同步', async t => {
+  const h=await controller(t,{targets:[{version:'opencode v2.3.2'},{version:'1.18.31'}]});await h.click('guideSkip');
+  assert.match(h.root.innerHTML,/本次导入：opencode v2.3.2 \+ 1.18.31/);assert.match(h.root.innerHTML,/各写一份/);assert.match(h.root.innerHTML,/不会自动同步/);
 });

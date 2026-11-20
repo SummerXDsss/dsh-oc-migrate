@@ -13,7 +13,7 @@ import { binaryCandidates } from '../packages/opencode-client/src/discovery.mjs'
 import { digest } from '../packages/core/src/protocol.mjs';
 import { createReceiver } from '../packages/middleware/src/server.mjs';
 
-const help = `dsh-oc-migrate 0.5.6 — DeepSeek Harness ↔ OpenCode 1.x / 2.x
+const help = `dsh-oc-migrate 0.5.7 — DeepSeek Harness ↔ OpenCode 1.x / 2.x
 
   init [--state DIR] [--token-file FILE]              创建本地接收令牌
   serve --directory DIR --token-file FILE [--auto-import]

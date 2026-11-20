@@ -1,4 +1,4 @@
-export const APP_VERSION = '0.5.6';
+export const APP_VERSION = '0.5.7';
 export type Page = 'guide' | 'migrate' | 'catalog' | 'jobs' | 'advanced' | 'plugin';
 export const GITHUB_LINKS = { author: 'https://github.com/SummerXDsss', project: 'https://github.com/SummerXDsss/dsh-oc-migrate' } as const;
 export const pageInfo: Record<Page, { label: string; title: string; description: string }> = {

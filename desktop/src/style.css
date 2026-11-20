@@ -56,3 +56,5 @@
 .permission-help p { margin: 4px 0 0; color: var(--muted); }
 /* Keep tutorial actions in view on the desktop's minimum-height window. */
 @media (max-height:760px) and (min-width:851px){.onboarding{padding-top:22px;margin-top:24px}.guide-note{margin-top:12px}.guide-actions{padding-top:20px}.guide-panel{min-height:380px}}
+
+.target-summary{border-left:2px solid var(--line-strong);padding:2px 0 2px 15px;margin:0 0 24px;font-size:12px;line-height:1.8}.target-summary strong{font-weight:550;color:var(--ink-secondary)}.target-summary p{margin:4px 0 0;color:var(--muted);max-width:760px}

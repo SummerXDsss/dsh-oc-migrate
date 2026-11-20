@@ -5,7 +5,7 @@ export function isFilePermissionError(value: unknown): boolean {
 }
 
 export type CatalogEntry = { id: string; sourceID: string; title: string; titleOrigin?: 'source' | 'first-message' | 'empty'; alias?: string; starred?: boolean; projectID: string; directory: string; messageCount: number; activeCount?: number; eventCount?: number; updated: number; parentID?: string; archived?: boolean };
-export type Catalog = { id: string; direction: string; input: Record<string, string>; scannedAt: string; plan: { target: null | { version: string }; sourceRoot: string }; entries: CatalogEntry[]; projects: { id: string; name: string; alias?: string; directory: string; count: number }[]; errors: { file?: string; error: string }[] };
+export type Catalog = { id: string; direction: string; input: Record<string, string>; scannedAt: string; plan: { targets?: { version: string }[]; target: null | { version: string }; sourceRoot: string }; entries: CatalogEntry[]; projects: { id: string; name: string; alias?: string; directory: string; count: number }[]; errors: { file?: string; error: string }[] };
 export type Preview = { id: string; offset: number; total: number; messages: { role: string; text: string; active: boolean; seq?: number; truncated?: boolean }[] };
 export type CatalogView = { project: string; query: string; onlyStarred: boolean; selected: Set<string>; focused: string; preview: Preview | null; loading: boolean; error: string; page: number; idsText: string; idsError: string };
 export const newCatalogView = (): CatalogView => ({ project: '', query: '', onlyStarred: false, selected: new Set(), focused: '', preview: null, loading: false, error: '', page: 0, idsText: '', idsError: '' });
