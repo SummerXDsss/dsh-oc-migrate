@@ -22,6 +22,7 @@ test('README 五张清晰截图均存在且本地文档链接有效，保留现�
   assert.ok(size < 1800000);
   for (const match of markdown.matchAll(/\]\(((?:docs\/|LICENSE|NOTICE)[^)]+|LICENSE|NOTICE)\)/g)) await readFile(new URL(match[1], root));
   assert.match(markdown, /文档演示 · 合成数据/);
+  assert.match(markdown, /\*\*图片说明：\*\* 本文/);
   assert.match(markdown, /当前采用本地构建交付/);
   assert.match(markdown, /v0\.5\.9.*PolyForm Noncommercial/);
   assert.match(markdown, /v0\.5\.8 及更早版本/);
