@@ -35,10 +35,13 @@ export function convertBundle(bundle, options) {
 function convertSession(source, options) {
   const { directory, generation } = options;
   const target = { providerID: options.provider ?? 'deepseek', modelID: options.model ?? 'deepseek-chat' };
-  const revision = digest({ source, directory, generation, target, archive: !!options.archive, stateSnapshots: options.stateSnapshots !== false });
+  const events = options.archive ? source.events.filter(event => SURFACE_TYPES.has(event.type)) : source.surfaceEventSeqs.map(seq => source.events[seq]);
+  const states = new Map();
+  if (options.stateSnapshots !== false) for (const event of source.events) if (/^(todo|goal)[/]/.test(event.type)) states.set(event.type.split('/')[0], event);
+  // /oc-migrate 本身也会记 command/run/done；仅原始审计尾巴变化不应复制聊天。
+  const revision = digest({ header: source.header, title: source.title ?? null, inheritedEventCount: source.inheritedEventCount ?? 0, events, states: [...states.values()], directory, generation, target, archive: !!options.archive });
   const sessionID = `ses_${revision.slice(0, 26)}`;
   const warnings = [];
-  const events = options.archive ? source.events.filter(event => SURFACE_TYPES.has(event.type)) : source.surfaceEventSeqs.map(seq => source.events[seq]);
   // 先配对结果再转换 assistant；不把 tool/result 重复写成用户消息。
   const results = new Map();
   for (const event of events.filter(event => !options.archive && event.type === 'tool/result')) {
@@ -123,8 +126,6 @@ function convertSession(source, options) {
     }
   }
   if (options.stateSnapshots !== false) {
-    const states = new Map();
-    for (const event of source.events) if (/^(todo|goal)[/]/.test(event.type)) states.set(event.type.split('/')[0], event);
     if (states.size) add('user', [{ type: 'text', text: '[DSH 状态快照；仅作历史背景，不恢复任务执行]\n' + [...states.values()].map(event => `${event.type}: ${JSON.stringify(event.data)}`).join('\n') }], [...states.values()].at(-1));
   }
   const created = source.header.createdAt, updated = source.events.reduce((time, event) => Math.max(time, event.time), created);

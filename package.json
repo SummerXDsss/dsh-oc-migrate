@@ -16,6 +16,7 @@
     "test": "node --test test/*.test.mjs",
     "check": "node scripts/check.mjs",
     "test:integration": "node --test test/integration/*.test.mjs",
+    "test:package": "node scripts/package-smoke.mjs",
     "start": "node bin/dsh-oc-migrate.mjs serve"
   },
   "dependencies": { "@deepseek-ai/schemastery": "3.19.0" },

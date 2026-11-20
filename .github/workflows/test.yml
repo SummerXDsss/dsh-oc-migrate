@@ -17,7 +17,7 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm test
-      - run: npm pack --dry-run
+      - run: npm run test:package
   native-regression:
     runs-on: ubuntu-latest
     steps:

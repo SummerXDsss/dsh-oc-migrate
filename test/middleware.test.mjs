@@ -54,6 +54,13 @@ test('另一个任务的已有会话不归本任务回滚', async t => {
   assert.equal(report.sessions[0].owned, false);
   await store.rollback(report.id); assert.equal(client.sessions.size, 1);
 });
+test('回滚预检查保留已有用户分支，且不删除其他拟回滚会话', async t => {
+  const { store, client } = await setup(t);
+  const report = await store.receive(fixture({ compact: true }), { importNow: true });
+  client.assertNoChildren = async id => { if (id === report.sessions[1].sessionID) throw new Error('已有子会话'); };
+  await assert.rejects(store.rollback(report.id), /子会话/);
+  assert.equal(client.sessions.size, 2);
+});
 test('并发重复任务返回 409 而不是双重导入', async t => {
   const { store } = await setup(t);
   const report = await store.receive(fixture());

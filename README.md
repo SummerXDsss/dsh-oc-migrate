@@ -112,7 +112,7 @@ node bin/dsh-oc-migrate.mjs retry JOB_ID --directory /absolute/path/to/project
 node bin/dsh-oc-migrate.mjs rollback JOB_ID --directory /absolute/path/to/project
 ```
 
-重试/回滚时复用原来的 `--state`、`--binary`、`--data-home` 或 `--server`。回滚先回读核对，不删除已经新增或修改正文的会话，也不删除由其他迁移任务提前创建的相同会话。失败导入保留原件及进度，重试不会执行历史工具。
+重试/回滚时复用原来的 `--state`、`--binary`、`--data-home` 或 `--server`。回滚先回读核对，不删除已经新增或修改正文的会话、有新子会话的会话，也不删除由其他迁移任务提前创建的相同会话。失败导入保留原件及进度，重试不会执行历史工具。
 
 开发回归：`npm run check && npm test`。真实二进制回归：`npm run test:integration`，使用隔离数据目录，不访问现有 OpenCode 历史。
 

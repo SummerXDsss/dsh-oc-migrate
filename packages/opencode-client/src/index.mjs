@@ -66,6 +66,15 @@ export async function createCliClient(config) {
       await run(['session', 'delete', sessionID, ...flags]);
       if (await this.export(sessionID)) throw new Error(`删除后会话仍存在：${sessionID}`);
     },
+    async assertNoChildren(sessionID) {
+      if (!/^ses_[a-f0-9]{26}$/.test(sessionID)) throw new Error('回滚 session id 无效');
+      // 1.x 没有通用 api CLI；只读查询原生数据库，不直接写表。
+      const result = generation === 'v1'
+        ? JSON.parse((await run(['db', `SELECT id FROM session WHERE parent_id = '${sessionID}' LIMIT 1`, '--format', 'json', '--pure'])).stdout.trim())
+        : parseJSON((await run(['api', 'GET', `/api/session?parentID=${sessionID}&limit=1`, ...flags])).stdout).data;
+      if (!Array.isArray(result)) throw new Error('子会话预检查返回格式异常');
+      if (result.length) throw new Error(`会话 ${sessionID} 已有子会话，回滚保留该会话及其分支`);
+    },
   };
 }
 
@@ -97,6 +106,13 @@ export function createHttpClient(config) {
       const response = await request(`/api/session/${encodeURIComponent(sessionID)}`, { method: 'DELETE' });
       if (!response.ok && response.status !== 404) throw new Error(`OpenCode delete HTTP ${response.status}`);
       if (await this.export(sessionID)) throw new Error('OpenCode 删除后会话仍存在');
+    },
+    async assertNoChildren(sessionID) {
+      const response = await request(`/api/session?parentID=${encodeURIComponent(sessionID)}&limit=1`);
+      if (!response.ok) throw new Error(`OpenCode 子会话预检查 HTTP ${response.status}`);
+      const result = await response.json();
+      if (!Array.isArray(result.data)) throw new Error('子会话预检查返回格式异常');
+      if (result.data.length) throw new Error(`会话 ${sessionID} 已有子会话，回滚保留该会话及其分支`);
     },
   };
 }

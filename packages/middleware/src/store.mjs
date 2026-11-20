@@ -91,6 +91,7 @@ export class MigrationStore {
       // 全部预检查：用户已继续的会话不删除，也不在检查中途先删别的会话。
       for (const item of report.sessions) {
         if (!item.owned) continue;
+        await client.assertNoChildren?.(item.sessionID);
         const actual = await client.export(item.sessionID);
         if (actual) verifyTranscript(JSON.parse(await readFile(path.join(dir, `${item.sessionID}.json`), 'utf8')), actual);
       }

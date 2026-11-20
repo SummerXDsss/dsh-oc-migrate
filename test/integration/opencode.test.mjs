@@ -7,7 +7,8 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fixture } from '../fixture.mjs';
 import { createCliClient } from '../../packages/opencode-client/src/index.mjs';
-import { MigrationStore } from '../../packages/middleware/src/store.mjs';
+import { MigrationStore, atomicJSON } from '../../packages/middleware/src/store.mjs';
+import { convertBundle } from '../../packages/core/src/convert.mjs';
 
 const exec = promisify(execFile);
 const matrix = [
@@ -48,6 +49,13 @@ for (const target of matrix) {
     }
     const duplicate = await store.receive({ ...bundle, exportedAt: 'later' }, { importNow: true });
     assert.equal(report.id, duplicate.id);
+    const [child] = convertBundle(fixture({ id: 'user-created-child' }), { directory, generation: target.generation });
+    child.transcript.info.parentID = report.sessions[0].sessionID;
+    const childFile = path.join(root, 'child.json'); await atomicJSON(childFile, child.transcript);
+    await client.import(childFile, child.transcript);
+    await assert.rejects(store.rollback(report.id), /子会话/);
+    assert.ok(await client.export(child.sessionID));
+    await client.remove(child.sessionID);
     assert.equal((await store.rollback(report.id)).status, 'rolled-back');
     for (const item of report.sessions) assert.equal(await client.export(item.sessionID), null);
     t.diagnostic('import=PASS; export=PASS; idempotence=PASS; rollback=PASS; existing user history untouched');

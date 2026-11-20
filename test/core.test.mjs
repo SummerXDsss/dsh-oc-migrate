@@ -77,3 +77,12 @@ test('扩展插件的标量事件保留，不阻断完整会话导出', () => {
   validateBundle(bundle);
   assert.equal(events.at(-1).data, '原始标量事件');
 });
+test('导出命令的审计尾巴变化不会复制相同对话，raw 包 hash 仍有区别', () => {
+  const bundle = fixture(), changed = structuredClone(bundle), events = changed.sessions[0].events;
+  events.push({ seq: events.length, type: 'command/run', time: 1795132801000, data: { name: 'oc-migrate' } });
+  events.push({ seq: events.length, type: 'command/done', time: 1795132801001, data: { name: 'oc-migrate' } });
+  const [a] = convertBundle(bundle, { directory: '/target' });
+  const [b] = convertBundle(changed, { directory: '/target' });
+  assert.equal(a.sessionID, b.sessionID); assert.notEqual(contentDigest(bundle), contentDigest(changed));
+  verifyTranscript(a.transcript, b.transcript);
+});
