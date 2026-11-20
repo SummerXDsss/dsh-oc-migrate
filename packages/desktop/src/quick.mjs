@@ -5,6 +5,7 @@ import { findLocalSessions, captureLocalSession } from '../../plugin/src/local-r
 import { FORMAT, digest } from '../../core/src/protocol.mjs';
 import { ReverseStore, detectDshEncoding } from '../../middleware/src/reverse.mjs';
 import { atomicJSON } from '../../middleware/src/store.mjs';
+import { readDshWorkspaces, workspaceFor, canonicalDirectory } from './source-labels.mjs';
 
 import { binaryCandidates } from '../../opencode-client/src/discovery.mjs';
 export { binaryCandidates };
@@ -87,7 +88,12 @@ export class QuickMigration {
         await atomicJSON(path.join(this.root, 'quick-runs', this.current.id, 'sources', `${index}.json`), source);
         const after = await client.export(item.id);
         if (!after || digest(after) !== hash) throw new Error('OpenCode 对话正在变化，请在响应结束后重新迁移');
-        const report = await store.receive(source, { importNow: true });
+        const projects = client.listProjects ? await client.listProjects() : [];
+        const nativeProject = projects.find(p => p.id === source.info.projectID);
+        const directory = source.info.location?.directory ?? source.info.directory;
+        const project = directory ? { name: nativeProject?.name || path.basename(directory), directory } : undefined;
+        if (item.expectedProject && digest(project ?? null) !== item.expectedProject) throw new Error('项目名称自扫描后已变化，请重新扫描再迁移');
+        const report = await store.receive({ ...source, ...(project ? { migrationProject: project } : {}) }, { importNow: true });
         this.current.jobs.push({ id: report.id, sourceID: item.id, sha256: hash, status: report.status, directory: report.sessions[0]?.directory });
         this.emit({ type: 'jobs-changed', id: report.id });
         if (report.status !== 'imported') throw new Error(report.error || 'DSH 原生日志回读未通过');
@@ -134,6 +140,11 @@ export class QuickMigration {
       this.current.stage = `正在读取第 ${index + 1} / ${files.length} 个对话`; await this.save();
       try {
         const captured = await captureLocalSession(item);
+        const registry = await readDshWorkspaces(plan.sourceRoot);
+        if (registry.error) throw new Error('源项目名称读取失败：' + registry.error);
+        const project = workspaceFor(registry.records, captured.session.header.id, await canonicalDirectory(captured.session.header.cwd ?? ''));
+        if (project?.name) captured.session.project = { name: project.name, directory: project.directory };
+        if (item.expectedProject && digest(captured.session.project ?? null) !== item.expectedProject) throw new Error('项目名称自扫描后已变化，请重新扫描再迁移');
         if (item.expectedHash && item.expectedHash !== captured.hash) throw new Error('对话自扫描后已变化，请重新扫描再迁移');
         const original = `${index}${captured.file.endsWith('.zstd') ? '.jsonl.zstd' : '.jsonl'}`;
         await writeFile(path.join(this.root, 'quick-runs', this.current.id, 'sources', original), captured.bytes, { mode: 0o600, flag: 'wx' });

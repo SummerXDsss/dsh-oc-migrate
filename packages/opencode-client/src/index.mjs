@@ -1,8 +1,30 @@
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { promisify } from 'node:util';
 import { canonical, digest } from '../../core/src/protocol.mjs';
 
 const execute = promisify(execFile);
+// 1.x has no `api` subcommand. Use its supported loopback HTTP API, not SQL writes.
+async function v1ProjectUpdate(binary, config, env, id, name, kind = 'project') {
+  const password = randomBytes(24).toString('hex');
+  const child = spawn(binary, ['serve', '--hostname', '127.0.0.1', '--port', '0', '--pure'], { cwd: config.directory, env: { ...env, OPENCODE_SERVER_PASSWORD: password }, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  const exited = new Promise(resolve => { child.once('exit', resolve); child.once('error', resolve); });
+  try {
+    const server = await new Promise((resolve, reject) => {
+      let output = '';
+      const timer = setTimeout(() => reject(new Error('OpenCode 1.x 项目 API 启动超时')), config.timeout ?? 30000);
+      const capture = chunk => { output = (output + chunk.toString()).slice(-8192); const url = output.match(/http:\/\/127\.0\.0\.1:\d+/)?.[0]; if (url) { clearTimeout(timer); resolve(url); } };
+      child.stdout.on('data', capture); child.stderr.on('data', capture);
+      child.once('error', error => { clearTimeout(timer); reject(error); });
+      child.once('exit', () => { clearTimeout(timer); reject(new Error('OpenCode 1.x 项目 API 提前退出')); });
+    });
+    const response = await fetch(`${server}/${kind}/${encodeURIComponent(id)}`, { method: 'PATCH', headers: { 'content-type': 'application/json', authorization: 'Basic ' + Buffer.from('opencode:' + password).toString('base64') }, body: JSON.stringify(kind === 'project' ? { name } : { title: name }), redirect: 'error', signal: AbortSignal.timeout(config.timeout ?? 30000) });
+    if (!response.ok) throw new Error(`OpenCode 项目改名 HTTP ${response.status}`);
+    return response.json();
+  } finally {
+    if (child.pid && child.exitCode === null) { child.kill('SIGTERM'); const timer = setTimeout(() => child.kill('SIGKILL'), 5000); await exited; clearTimeout(timer); }
+  }
+}
 // 只比较历史正文；原生导入会重绑 project、directory 并重新计算会话统计。
 export function transcriptShape(transcript) {
   return { id: transcript.info.id, title: transcript.info.title, messages: transcript.messages.map(message => message.info ? {
@@ -74,6 +96,17 @@ export async function createCliClient(config) {
   return {
     generation, version,
     identity: digest({ adapter: 'cli', binary, directory: config.directory, dataHome: env.XDG_DATA_HOME ?? '', db: env.OPENCODE_DB ?? '', generation }),
+    storageIdentity: digest({ adapter: 'cli', binary, dataHome: env.XDG_DATA_HOME ?? '', db: env.OPENCODE_DB ?? '', generation }),
+    async updateProjectName(id, name) {
+      if (typeof id !== 'string' || typeof name !== 'string' || name.length > 500) throw new Error('项目名称参数无效');
+      return generation === 'v1' ? v1ProjectUpdate(binary, config, env, id, name)
+        : parseJSON((await run(['api', 'PATCH', `/api/project/${encodeURIComponent(id)}`, '--data', JSON.stringify({ name }), ...flags])).stdout);
+    },
+    async updateSessionTitle(id, title) {
+      if (generation === 'v1') return v1ProjectUpdate(binary, config, env, id, title, 'session');
+      await run(['api', 'PATCH', `/api/session/${encodeURIComponent(id)}`, '--data', JSON.stringify({ title }), ...flags]);
+      return { updated: true };
+    },
     async listProjects() {
       return generation === 'v1'
         ? parseArray((await run(['db', 'SELECT id, name, worktree FROM project ORDER BY id', '--format', 'json', ...flags])).stdout)
@@ -82,7 +115,7 @@ export async function createCliClient(config) {
     async listAll({ pageSize = 100 } = {}) {
       if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100) throw new Error('OpenCode 分页大小需要 1–100');
       if (generation === 'v2') return listSessionPages(async cursor => parseJSON((await run(['api', 'GET', `/api/session?limit=${pageSize}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`, ...flags])).stdout));
-      const { stdout } = await run(['db', 'SELECT id, directory, parent_id, title, time_updated, time_archived FROM session ORDER BY id', '--format', 'json', ...flags]);
+      const { stdout } = await run(['db', 'SELECT id, project_id AS projectID, directory, parent_id, title, time_updated, time_archived FROM session ORDER BY id', '--format', 'json', ...flags]);
       const start = stdout.search(/^\s*\[/m);
       const rows = JSON.parse(stdout.slice(start));
       if (start < 0 || !Array.isArray(rows)) throw new Error('OpenCode 1.x 会话列表格式异常');
@@ -129,6 +162,17 @@ export function createHttpClient(config) {
   return {
     generation: 'v2', version: 'v2-http',
     identity: digest({ adapter: 'http', server: url.origin, directory: config.directory, generation: 'v2' }),
+    storageIdentity: digest({ adapter: 'http', server: url.origin, generation: 'v2' }),
+    async updateProjectName(id, name) {
+      const response = await request(`/api/project/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify({ name }) });
+      if (!response.ok) throw new Error(`OpenCode 项目改名 HTTP ${response.status}`);
+      return response.json();
+    },
+    async updateSessionTitle(id, title) {
+      const response = await request(`/api/session/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify({ title }) });
+      if (!response.ok) throw new Error(`OpenCode 标题修复 HTTP ${response.status}`);
+      return response.json();
+    },
     async listProjects() {
       const response = await request('/api/project');
       if (!response.ok) throw new Error(`OpenCode projects HTTP ${response.status}`);

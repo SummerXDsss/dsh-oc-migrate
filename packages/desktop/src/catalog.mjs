@@ -60,7 +60,7 @@ export class ConversationCatalog {
           const directory = s.header.cwd ?? '', workspace = directory ? workspaceFor(workspaces, s.header.id, await canonicalDirectory(directory)) : undefined;
           const titleMessages = nonEmpty(s.title) ? [] : s.events.filter(e => e.type === 'user/message').map(e => ({ role: 'user', text: e.data.content.filter(b => b.type === 'text').map(b => b.text).join('\n') }));
           entry = { sourceID: s.header.id, ...conversationLabel(s.title, titleMessages, s.header.id), ...(s.titleOrigin ? { titleOrigin: s.titleOrigin } : {}), directory, created: s.header.createdAt,
-            projectDirectory: workspace?.directory, projectName: workspace?.name, projectNameOrigin: workspace?.name ? 'dsh-workspace' : 'directory',
+            projectDirectory: workspace?.directory, projectName: workspace?.name, projectNameOrigin: workspace?.name ? 'dsh-workspace' : 'directory', projectFingerprint: digest(workspace?.name ? { name: workspace.name, directory: workspace.directory } : null),
             updated: s.events.reduce((n, e) => Math.max(n, e.time), s.header.createdAt), messageCount: messages.length,
             activeCount: s.surfaceEventSeqs.length, eventCount: s.events.length, parentID: s.header.parentSession ?? null,
             fingerprint: captured.hash, source: item };
@@ -71,7 +71,7 @@ export class ConversationCatalog {
           const title = nonEmpty(transcript.info.title) ?? nonEmpty(item.title);
           const titleMessages = title ? [] : transcript.messages.filter(record => (record.info?.role ?? record.type) === 'user').map(record => ({ role: 'user', text: record.text ?? (record.parts ?? record.content ?? []).filter(b => b.type === 'text').map(b => b.text).join('\n') }));
           entry = { sourceID: item.id, ...conversationLabel(title, titleMessages, item.id), directory: transcript.info.location?.directory ?? transcript.info.directory ?? '',
-            projectDirectory: nativeProject?.canonical ?? nativeProject?.worktree, projectName: nonEmpty(nativeProject?.name), projectNameOrigin: nonEmpty(nativeProject?.name) ? 'opencode-project' : 'directory',
+            projectDirectory: nativeProject?.canonical ?? nativeProject?.worktree, projectName: nonEmpty(nativeProject?.name), projectNameOrigin: nonEmpty(nativeProject?.name) ? 'opencode-project' : 'directory', projectFingerprint: digest((transcript.info.location?.directory ?? transcript.info.directory) ? { name: nonEmpty(nativeProject?.name) || path.basename(transcript.info.location?.directory ?? transcript.info.directory), directory: transcript.info.location?.directory ?? transcript.info.directory } : null),
             created: transcript.info.time?.created ?? 0, updated: transcript.info.time?.updated ?? 0, messageCount: transcript.messages.length,
             parentID: transcript.info.parentID ?? null, archived: !!transcript.info.time?.archived, fingerprint: digest(transcript), source: { id: item.id } };
         }
@@ -131,7 +131,7 @@ export class ConversationCatalog {
     if (client.generation !== catalog.plan.target.generation || client.version !== catalog.plan.target.version) throw new Error('OpenCode 版本已变化，请重新扫描');
     this.requireScan(scanID);
     const plan = { ...catalog.plan, direction: catalog.direction, total: selected.length, errors: [], scanID,
-      ...(catalog.direction === 'oc-to-dsh' ? { sessions: selected.map(e => ({ id: e.sourceID, expectedHash: e.fingerprint })) } : { files: selected.map(e => ({ ...e.source, expectedHash: e.fingerprint })) }) };
+      ...(catalog.direction === 'oc-to-dsh' ? { sessions: selected.map(e => ({ id: e.sourceID, expectedHash: e.fingerprint, expectedProject: e.projectFingerprint })) } : { files: selected.map(e => ({ ...e.source, expectedHash: e.fingerprint, expectedProject: e.projectFingerprint })) }) };
     return this.quick.start(catalog.input, plan);
   }
 }

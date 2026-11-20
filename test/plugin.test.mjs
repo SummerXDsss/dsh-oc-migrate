@@ -72,8 +72,9 @@ test('all 会继续导出其他会话并明确报告坏会话', async t => {
   const read = query.readSession;
   query.readSession = async id => { if (id === 'bad') throw new Error('模拟损坏'); return read(id); };
   let command;
-  apply({ sessionQuery: query, commands: { register(def) { command = def; } } }, { tokenFile, receiver: `http://127.0.0.1:${server.address().port}` });
+  apply({ sessionQuery: query, workspaceRegistry: { list: () => [{ title: '插件原生项目名称', path: '/original/dsh-project', sessionIds: ['good'] }] }, commands: { register(def) { command = def; } } }, { tokenFile, receiver: `http://127.0.0.1:${server.address().port}` });
   const result = await command.handler({ rawInput: 'all', signal: new AbortController().signal });
   assert.equal(result.kind, 'error'); assert.match(result.text, /已接收 1 个会话/); assert.match(result.text, /bad.*模拟损坏/);
   assert.equal((await store.list()).length, 1);
+  const job=(await store.list())[0], source=JSON.parse(await (await import('node:fs/promises')).readFile(path.join(store.jobPath(job.id),'source.json')));assert.deepEqual(source.sessions[0].project,{name:'插件原生项目名称',directory:'/original/dsh-project'});
 });

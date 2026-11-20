@@ -33,19 +33,24 @@ for (const [generation, binary] of [['v1', process.env.OPENCODE_V1_BIN], ['v2', 
     const preview=await app.request('catalogPreview',{scanID:catalog.id,id:chosen.id});assert.match(JSON.stringify(preview),/原始文件内容/);
     await app.request('startSelected',{scanID:catalog.id,ids:[chosen.id]});await app.quick.done;
     assert.equal(app.quick.current.imported,1,JSON.stringify(app.quick.current.errors));assert.equal((await client.listAll()).length,1);
-    assert.equal((await client.export((await client.listAll())[0].id)).info.title,'管理器中文-1');
+    const actualForward=await client.export((await client.listAll())[0].id);assert.equal(actualForward.info.title,'管理器中文-1');assert.equal((await client.listProjects()).find(p=>p.id===actualForward.info.projectID).name,'正式项目-BETA');
+    await client.updateSessionTitle(actualForward.info.id,'DeepSeek · catalog-1');assert.equal((await client.export(actualForward.info.id)).info.title,'DeepSeek · catalog-1');
+    const repaired=await app.request('retry',{id:app.quick.current.jobs[0].id});assert.equal(repaired.status,'imported',repaired.error);assert.equal((await client.export(actualForward.info.id)).info.title,'管理器中文-1');
     await app.request('rollback',{id:app.quick.current.jobs[0].id});assert.equal((await client.listAll()).length,0);
     for(const source of sources) {
       const converted=convertBundle({...fixture(),sessions:[source]},{directory:source.header.cwd,generation})[0];const file=path.join(root,source.header.id+'.json');await writeFile(file,JSON.stringify(converted.transcript));
       const projectClient=await makeClient({directory:source.header.cwd});await projectClient.import(file,converted.transcript);
     }
     const nativeProjects=await client.listProjects();assert(Array.isArray(nativeProjects));
+    for(const p of nativeProjects.filter(p=>p.id!=='global' && /ALPHA|BETA/.test(p.canonical??p.worktree??'')))await client.updateProjectName(p.id,'原生中文-'+path.basename(p.canonical??p.worktree));
     for(const info of await client.listAll()){const actual=await client.export(info.id);assert(nativeProjects.some(project=>project.id===actual.info.projectID));}
     const target=path.join(root,'reverse-target');catalog=await app.request('scanCatalog',{direction:'oc-to-dsh',dshRoot:target});assert.equal(catalog.entries.length,3);assert.equal(catalog.projects.length,2);
     const selected=catalog.entries[1];assert.match(JSON.stringify(await app.request('catalogPreview',{scanID:catalog.id,id:selected.id})),/原始文件内容/);
     await app.request('startSelected',{scanID:catalog.id,ids:[selected.id]});await app.quick.done;
     assert.equal(app.quick.current.imported,1,JSON.stringify(app.quick.current.errors));const scan=await findLocalSessions(target);assert.equal(scan.files.length,1);
     assert.match(JSON.stringify((await captureLocalSession(scan.files[0])).session),/原始文件内容/);
+    const registry=JSON.parse(await (await import('node:fs/promises')).readFile(path.join(root,'storages/workspace.json'),'utf8'));const nativeID=(await captureLocalSession(scan.files[0])).session.header.id;const registered=Object.values(registry.tables.workspaces).find(w=>w.sessionIds.includes(nativeID));
+    assert.match(registered.title,/原生中文-/);assert.equal(registered.title,catalog.projects.find(p=>p.id===selected.projectID).name);
     await app.request('rollback',{id:app.quick.current.jobs[0].id});assert.equal((await findLocalSessions(target)).files.length,0);assert.equal((await client.listAll()).length,3);
     for(const info of await client.listAll()) await client.remove(info.id);
     t.diagnostic('scan read-only; projects=2; sources=3; selected=1 each direction; preview/native history/rollback PASS');
