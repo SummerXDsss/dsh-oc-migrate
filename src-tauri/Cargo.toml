@@ -1,10 +1,10 @@
 [package]
 name = "dsh-oc-migrate-desktop"
-version = "0.5.8"
+version = "0.5.9"
 description = "DeepSeek Harness history migration desktop"
 authors = ["SummerXDsss"]
 edition = "2021"
-license = "MIT"
+license = "PolyForm-Noncommercial-1.0.0"
 rust-version = "1.85"
 
 [build-dependencies]

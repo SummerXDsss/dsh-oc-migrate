@@ -1,9 +1,9 @@
 {
   "name": "dsh-oc-migrate",
-  "version": "0.5.8",
+  "version": "0.5.9",
   "description": "DeepSeek Harness ↔ OpenCode 1.x / 2.x 双向本地对话迁移",
   "type": "module",
-  "license": "MIT",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "engines": {
     "node": ">=22.19"
   },
@@ -24,7 +24,8 @@
     "docs",
     "examples",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "NOTICE"
   ],
   "scripts": {
     "test": "node --test test/*.test.mjs",

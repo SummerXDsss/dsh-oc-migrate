@@ -32,6 +32,12 @@ DSH Host 插件 → gzip 迁移包 → 本地中间件 → OpenCode 原生 impor
                                                    └─ 同一后端的 GUI
 ```
 
+## 许可证
+
+从 **v0.5.9** 起，本项目自身代码以 [PolyForm Noncommercial 1.0.0](LICENSE) 公开源码。该许可范围之外的商业使用，请联系[作者](https://github.com/SummerXDsss)另行授权。分发新版时请附上许可证（或许可证中的网址）与 [NOTICE](NOTICE)。
+
+**v0.5.8 及更早版本**仍按对应版本所附的 [MIT 许可证](https://github.com/SummerXDsss/dsh-oc-migrate/blob/v0.5.8/LICENSE)提供；新许可不追溯已按 MIT 发放的副本。第三方依赖继续适用各自的许可。
+
 ## 双向迁移
 
 OpenCode → DSH 使用原生 export 读取全部项目、分支、归档，生成 DSH 原生 v4 JSONL/Zstd。保留标题、项目路径、正文、思考、历史工具结果与原始 JSON；重复截面去重，已修改/已取得 DSH 写入权的会话回滚时保留。不是实时同步，也不覆盖合并已继续的历史。扩展事件和压缩状态作为快照留存，附件保留引用。[边界、回滚与 CLI 用法](docs/BIDIRECTIONAL.md)。
