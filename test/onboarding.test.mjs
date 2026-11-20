@@ -34,7 +34,7 @@ test('独立高级导航与 GitHub 快捷入口；侧栏不再渲染旧说明和
 });
 
 let sequence = 0;
-async function controller(t, {seen=false,quick=null,scanError=false,partialErrors=[]}={}) {
+async function controller(t, {seen=false,quick=null,scanError=false,partialErrors=[],planErrors=[]}={}) {
   const storage=freshStorage();if(seen)completeGuide(storage);
   const handlers={},fields=new Map(),calls=[];
   const root={innerHTML:'',querySelectorAll:()=>[],querySelector:()=>null,addEventListener:(type,fn)=>handlers[type]=fn};
@@ -43,7 +43,7 @@ async function controller(t, {seen=false,quick=null,scanError=false,partialError
   globalThis.document={documentElement:{dataset:{}},querySelector:()=>root,getElementById:id=>fields.get(id)||null};globalThis.localStorage=storage;
   globalThis.__onboardingHarness={
     invoke:async(command,args)=>{calls.push({command,...args});if(command==='open_github')return;
-      const{method,payload}=args;if(method==='snapshot')return structuredClone(snapshot);if(method==='discoverQuick')return{total:1,target:{version:'fixture'}};
+      const{method,payload}=args;if(method==='snapshot')return structuredClone(snapshot);if(method==='discoverQuick')return{total:planErrors.length?0:1,target:{version:'fixture'},errors:planErrors};
       if(method==='scanCatalog'){if(scanError)throw Error(typeof scanError === 'string' ? scanError : '请检查对话位置后重新扫描');snapshot.catalog={id:'scan',direction:payload.direction,input:payload,plan:{target:{version:'fixture'},sourceRoot:'/fixture'},projects:[],entries:[],errors:partialErrors,scannedAt:new Date().toISOString()};return structuredClone(snapshot.catalog);}throw Error(method);},
     listen:async()=>{},open:async()=>null,confirm:async()=>true
   };
@@ -101,4 +101,10 @@ test('无权限错误不显示授权提示，教程提前说明系统可能询�
 test('识别各系统权限错误，不把未找到路径或普通连接错误当成授权问题', () => {
   for(const error of ['EACCES: scandir /fixture','EPERM: open /fixture','Permission denied','Operation not permitted','Access is denied','拒绝访问','没有读取权限','文件权限不足',new Error('EACCES'),{code:'EPERM',message:'scandir'}]) assert.equal(isFilePermissionError(error),true,String(error));
   for(const error of ['ENOENT: no such file','ECONNREFUSED','需要检查安装位置',null,undefined]) assert.equal(isFilePermissionError(error),false,String(error));
+});
+
+test('权限拒绝不伪装成空历史；读取恢复后重新检测会清除提示', async t => {
+  const errors=[{error:'EACCES: permission denied, scandir /fixture'}];const h=await controller(t,{planErrors:errors});
+  await h.click('guideSkip');assert.match(h.root.innerHTML,/读取受阻，请先检查权限/);assert.match(h.root.innerHTML,/data-action="startQuick" disabled/);
+  errors.splice(0);await h.click('probeQuick');assert.doesNotMatch(h.root.innerHTML,/还需要文件读取权限|读取受阻/);assert.match(h.root.innerHTML,/找到 1 个/);
 });
