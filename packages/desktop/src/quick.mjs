@@ -55,10 +55,10 @@ export class QuickMigration {
     await detectDshEncoding(dshRoot);
     return { direction: 'oc-to-dsh', total: sessions.length, sessions, target, sourceRoot: target.binary, directory: dshRoot, preserveProjects: true, errors: [] };
   }
-  async startReverse(input) {
+  async startReverse(input, prepared) {
     if (this.active) throw new Error('一键迁移正在进行');
     for (const key of ['dshRoot', 'dataHome']) if (input[key] && !path.isAbsolute(input[key])) throw new Error(`${key} 需要绝对路径`);
-    const plan = await this.discoverReverse(input);
+    const plan = prepared ?? await this.discoverReverse(input);
     if (!plan.target) throw new Error('未找到可用的 OpenCode');
     if (!plan.total) throw new Error('OpenCode 中尚未找到对话');
     const id = randomUUID();
@@ -66,7 +66,7 @@ export class QuickMigration {
     this.active = true; this.cancelled = false;
     this.current = { id, direction: 'oc-to-dsh', status: 'running', stage: '正在读取 OpenCode 全部项目的历史', total: plan.total,
       finished: 0, imported: 0, nativeSessions: 0, skipped: 0, sourceRoot: plan.sourceRoot, target: plan.target, directory: plan.directory,
-      createdAt: new Date().toISOString(), jobs: [], errors: [] };
+      createdAt: new Date().toISOString(), ...(plan.scanID ? { scanID: plan.scanID, selected: true } : {}), jobs: [], errors: [] };
     try { await this.save(); } catch (error) { this.active = false; throw error; }
     this.done = this.executeReverse(plan, input).catch(async error => {
       this.current.status = 'failed'; this.current.errors.push({ error: error.message }); await this.save();
@@ -83,6 +83,7 @@ export class QuickMigration {
         const source = await client.export(item.id);
         if (!source) throw new Error('会话在导出前已删除，请重新扫描');
         const hash = digest(source);
+        if (item.expectedHash && item.expectedHash !== hash) throw new Error('对话自扫描后已变化，请重新扫描再迁移');
         await atomicJSON(path.join(this.root, 'quick-runs', this.current.id, 'sources', `${index}.json`), source);
         const after = await client.export(item.id);
         if (!after || digest(after) !== hash) throw new Error('OpenCode 对话正在变化，请在响应结束后重新迁移');
@@ -103,19 +104,19 @@ export class QuickMigration {
     await atomicJSON(path.join(this.root, 'quick-runs', this.current.id, 'report.json'), this.current);
     this.emit({ type: 'quick-progress', quick: this.current });
   }
-  async start(input = {}) {
-    if (input.direction === 'oc-to-dsh') return this.startReverse(input);
+  async start(input = {}, prepared) {
+    if (input.direction === 'oc-to-dsh') return this.startReverse(input, prepared);
     if (this.active) throw new Error('一键迁移正在进行');
     for (const key of ['sourceRoot', 'directory', 'dataHome']) if (input[key] && !path.isAbsolute(input[key])) throw new Error(`${key} 需要绝对路径`);
-    const plan = await this.discover(input);
+    const plan = prepared ?? await this.discover(input);
     if (!plan.target) throw new Error('未找到可用的 OpenCode，请安装 OpenCode 后重试，或在高级设置中选择');
-    const scan = await findLocalSessions(plan.sourceRoot);
+    const scan = prepared ? { files: prepared.files, errors: [] } : await findLocalSessions(plan.sourceRoot);
     if (!scan.files.length) throw new Error(scan.errors[0]?.error || '尚未找到 DSH 本地对话，请在高级设置中选择 DSH sessions 文件夹');
     const id = randomUUID();
     await mkdir(path.join(this.root, 'quick-runs', id, 'sources'), { recursive: true, mode: 0o700 });
     this.active = true; this.cancelled = false;
     this.current = { id, status: 'running', stage: '正在读取本机对话', total: scan.files.length, finished: 0, imported: 0, nativeSessions: 0, skipped: 0,
-      sourceRoot: plan.sourceRoot, target: plan.target, directory: plan.directory, preserveProjects: plan.preserveProjects, createdAt: new Date().toISOString(),
+      sourceRoot: plan.sourceRoot, target: plan.target, directory: plan.directory, preserveProjects: plan.preserveProjects, createdAt: new Date().toISOString(), ...(plan.scanID ? { scanID: plan.scanID, selected: true } : {}),
       jobs: [], errors: [...scan.errors] };
     try { await this.save(); }
     catch (error) { this.active = false; throw error; }
@@ -133,6 +134,7 @@ export class QuickMigration {
       this.current.stage = `正在读取第 ${index + 1} / ${files.length} 个对话`; await this.save();
       try {
         const captured = await captureLocalSession(item);
+        if (item.expectedHash && item.expectedHash !== captured.hash) throw new Error('对话自扫描后已变化，请重新扫描再迁移');
         const original = `${index}${captured.file.endsWith('.zstd') ? '.jsonl.zstd' : '.jsonl'}`;
         await writeFile(path.join(this.root, 'quick-runs', this.current.id, 'sources', original), captured.bytes, { mode: 0o600, flag: 'wx' });
         const source = { file: item.file, original, sha256: captured.hash, sourceID: captured.session.header.id };

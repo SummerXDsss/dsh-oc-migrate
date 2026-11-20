@@ -9,6 +9,7 @@ import { ReverseStore } from '../../middleware/src/reverse.mjs';
 import { createReceiver } from '../../middleware/src/server.mjs';
 import { createCliClient, createHttpClient } from '../../opencode-client/src/index.mjs';
 import { QuickMigration, binaryCandidates } from './quick.mjs';
+import { ConversationCatalog } from './catalog.mjs';
 
 const MAX_FILE = 64 * 1024 * 1024;
 export class DesktopService {
@@ -29,11 +30,13 @@ export class DesktopService {
     try { this.settings = JSON.parse(await readFile(path.join(this.root, 'settings.json'), 'utf8')); }
     catch (error) { if (error.code !== 'ENOENT') throw error; this.settings = {}; }
     await this.quick.init();
+    this.catalog = new ConversationCatalog({ root: this.root, quick: this.quick, emit: this.emit });
+    await this.catalog.init();
     return this;
   }
   async snapshot() {
     return { settings: this.settings, receiver: this.receiver, jobs: await this.jobs.list(),
-      stateDirectory: this.root, tokenFile: this.tokenFile, pluginFile: this.pluginFile ?? null, quick: this.quick.current };
+      stateDirectory: this.root, tokenFile: this.tokenFile, pluginFile: this.pluginFile ?? null, quick: this.quick.current, catalog: this.catalog.snapshot() };
   }
   async detect() {
     const home = os.homedir();
@@ -126,6 +129,12 @@ export class DesktopService {
   async request(method, payload = {}) {
     if (this.quick.active && !['snapshot', 'discoverQuick', 'cancelQuick'].includes(method)) throw new Error('请等待一键迁移完成，或先停止迁移');
     switch (method) {
+      case 'scanCatalog': return this.catalog.scan(payload);
+      case 'catalogPreview': return this.catalog.preview(payload);
+      case 'catalogUpdate': return this.catalog.update(payload);
+      case 'startSelected':
+        if (this.server) throw new Error('请先停止高级接收端，再迁移所选对话');
+        return this.catalog.startSelected(payload);
       case 'discoverQuick': return this.quick.discover(payload);
       case 'startQuick':
         if (this.server) throw new Error('请先停止高级接收端，再开始一键迁移');

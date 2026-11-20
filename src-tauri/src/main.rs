@@ -45,6 +45,10 @@ async fn desktop_request(
         "discoverQuick",
         "startQuick",
         "cancelQuick",
+        "scanCatalog",
+        "catalogPreview",
+        "catalogUpdate",
+        "startSelected",
     ]
     .contains(&method.as_str())
     {
