@@ -96,4 +96,4 @@ listen<{type: string}>('desktop-event', event => {
 }).catch(console.error);
 refresh().catch(error => { notice = String(error); isError = true; render(); });
 // While a long native import is running, the persisted report still exposes progress.
-setInterval(() => { if (!busy && page === 'jobs' && !document.hidden) refresh().catch(console.error); }, 5000);
+setInterval(() => { if (!busy && page === 'jobs' && !document.hidden && state.jobs.some(j => j.status === 'importing')) refresh().catch(console.error); }, 5000);

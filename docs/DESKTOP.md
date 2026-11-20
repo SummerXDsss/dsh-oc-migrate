@@ -2,6 +2,8 @@
 
 ## 使用
 
+桌面安装包最低 macOS 13（内置 Bun 运行时要求）；Windows 10 1809+；Linux 需系统 WebKitGTK 4.1。
+
 从仓库 Releases 下载系统对应安装包。应用内置 JavaScript 运行时与迁移内核；用户无需安装 Node.js / Bun / Rust。OpenCode 与 DSH 由用户原有安装提供。
 
 1. 在「迁移工作台」选择目标项目文件夹、OpenCode 可执行文件，点击「检测并连接」。可以查找本机二进制；macOS 包内 CLI 也可选择。

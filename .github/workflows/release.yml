@@ -53,7 +53,7 @@ jobs:
         run: npm run desktop:build -- --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} --ci
         env:
           APPIMAGE_EXTRACT_AND_RUN: '1'
-          MACOSX_DEPLOYMENT_TARGET: '11.0'
+          MACOSX_DEPLOYMENT_TARGET: '13.0'
       - name: Exercise the compiled sidecar (not Node)
         shell: bash
         run: |
