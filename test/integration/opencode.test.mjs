@@ -35,9 +35,12 @@ for (const target of matrix) {
     const bundle = fixture();
     const compacted = fixture({ id: 'compacted-history', compact: true });
     bundle.sessions.push(...compacted.sessions);
+    const failedTool = fixture({ id: 'failed-tool' });
+    failedTool.sessions[0].events[6].data.message.isError = true;
+    bundle.sessions.push(...failedTool.sessions);
     const report = await store.receive(bundle, { importNow: true });
     assert.equal(report.status, 'imported', report.error);
-    assert.equal(report.sessions.length, 3);
+    assert.equal(report.sessions.length, 4);
     for (const item of report.sessions) {
       const result = await client.export(item.sessionID);
       assert.equal(result.info.id, item.sessionID);

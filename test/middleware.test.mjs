@@ -44,7 +44,6 @@ test('回滚前阻止删除已继续聊天的会话，保留别的任务已导�
   actual.messages[0].parts[0].text += ' 用户新增';
   await assert.rejects(store.rollback(a.id), /不匹配/);
   assert.equal(client.sessions.size, 1);
-  actual.messages[0].parts[0].text = a.sessions[0] ? '[改动仍保留]' : '';
 });
 test('另一个任务的已有会话不归本任务回滚', async t => {
   const { store, client } = await setup(t);

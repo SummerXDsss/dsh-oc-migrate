@@ -52,7 +52,7 @@ export class MigrationStore {
         report = { id, status: 'received', generation, destination: client?.identity ?? null, createdAt: new Date().toISOString(), sourceHash: contentDigest(bundle), sessions: converted.map(({ transcript: _, ...item }) => ({ ...item, status: 'pending' })) };
         await atomicJSON(path.join(dir, 'report.json'), report);
       }
-      if (importNow && report.status !== 'imported') return this.importLocked(dir, report);
+      if (importNow) return this.importLocked(dir, report);
       return report;
     });
   }

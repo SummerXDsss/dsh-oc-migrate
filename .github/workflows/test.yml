@@ -18,3 +18,21 @@ jobs:
       - run: npm run check
       - run: npm test
       - run: npm pack --dry-run
+  native-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Install pinned OpenCode binaries in isolated folders
+        run: |
+          npm install --prefix "$RUNNER_TEMP/oc-v1" opencode-ai@1.18.31 --no-audit --no-fund
+          npm install --prefix "$RUNNER_TEMP/oc-v2" @opencode/cli@2.3.2 --no-audit --no-fund
+      - name: Native CLI, server, and rollback regression
+        run: |
+          OPENCODE_V1_BIN="$RUNNER_TEMP/oc-v1/node_modules/.bin/opencode" \
+          OPENCODE_V2_BIN="$RUNNER_TEMP/oc-v2/node_modules/.bin/opencode" \
+          npm run test:integration

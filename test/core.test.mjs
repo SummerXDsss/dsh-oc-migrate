@@ -71,3 +71,9 @@ test('未知媒体引用以文字与告知保留，不自动下载', () => {
   const [item] = convertBundle(bundle, { directory: '/target' });
   assert.match(JSON.stringify(item.transcript), /attachment-original/); assert.match(item.warnings.join(), /未复制字节/);
 });
+test('扩展插件的标量事件保留，不阻断完整会话导出', () => {
+  const bundle = fixture(), events = bundle.sessions[0].events;
+  events.push({ seq: events.length, type: 'extension/notice', time: 1795132800100, data: '原始标量事件' });
+  validateBundle(bundle);
+  assert.equal(events.at(-1).data, '原始标量事件');
+});

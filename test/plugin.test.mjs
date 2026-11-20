@@ -54,3 +54,26 @@ test('导出传输拒绝非 loopback 及取消信号', async () => {
   const controller = new AbortController(); controller.abort();
   await assert.rejects(captureSession(queryFor([fixture()]), 'a', controller.signal), /abort/i);
 });
+test('标题从原始日志同一截面读取', async () => {
+  const bundle = fixture(), source = bundle.sessions[0];
+  source.events.push({ seq: source.events.length, type: 'session/title', time: 1795132801000, data: { title: '用户重命名标题' } });
+  const captured = await captureSession(queryFor([bundle]), source.header.id);
+  assert.equal(captured.title, '用户重命名标题');
+});
+test('all 会继续导出其他会话并明确报告坏会话', async t => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'dsh-plugin-partial-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const token = 'x'.repeat(64), tokenFile = path.join(root, 'token'); await writeFile(tokenFile, token);
+  const store = new MigrationStore({ state: root + '/jobs', directory: '/target', client: mockClient() });
+  const server = createReceiver({ store, token });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  const query = queryFor([fixture({ id: 'bad' }), fixture({ id: 'good' })]);
+  const read = query.readSession;
+  query.readSession = async id => { if (id === 'bad') throw new Error('模拟损坏'); return read(id); };
+  let command;
+  apply({ sessionQuery: query, commands: { register(def) { command = def; } } }, { tokenFile, receiver: `http://127.0.0.1:${server.address().port}` });
+  const result = await command.handler({ rawInput: 'all', signal: new AbortController().signal });
+  assert.equal(result.kind, 'error'); assert.match(result.text, /已接收 1 个会话/); assert.match(result.text, /bad.*模拟损坏/);
+  assert.equal((await store.list()).length, 1);
+});
