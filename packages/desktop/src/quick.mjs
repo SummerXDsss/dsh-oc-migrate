@@ -38,8 +38,11 @@ export class QuickMigration {
         return { binary, version: client.version, generation: client.generation };
       } catch { return null; }
     }));
-    const target = found.find(Boolean) || null;
-    return { sourceRoot, total: scan.files.length, errors: scan.errors, target,
+    // 1.x and 2.x use different native session tables, even under the same data home.
+    // Keep one installed target per generation; an explicit binary remains single-target.
+    const targets = found.filter(Boolean).filter((item, index, all) => all.findIndex(other => other.generation === item.generation) === index);
+    const target = targets[0] || null;
+    return { sourceRoot, total: scan.files.length, errors: scan.errors, target, targets,
       directory: input.directory || path.join(this.home, 'OpenCode/DSH 历史'), preserveProjects: !input.directory };
   }
   async discoverReverse(input) {
@@ -123,7 +126,7 @@ export class QuickMigration {
     await mkdir(path.join(this.root, 'quick-runs', id, 'sources'), { recursive: true, mode: 0o700 });
     this.active = true; this.cancelled = false;
     this.current = { id, status: 'running', stage: '正在读取本机对话', total: scan.files.length, finished: 0, imported: 0, nativeSessions: 0, skipped: 0,
-      sourceRoot: plan.sourceRoot, target: plan.target, directory: plan.directory, preserveProjects: plan.preserveProjects, createdAt: new Date().toISOString(), ...(plan.scanID ? { scanID: plan.scanID, selected: true } : {}),
+      sourceRoot: plan.sourceRoot, target: plan.target, targets: plan.targets ?? [plan.target], directory: plan.directory, preserveProjects: plan.preserveProjects, createdAt: new Date().toISOString(), ...(plan.scanID ? { scanID: plan.scanID, selected: true } : {}),
       jobs: [], errors: [...scan.errors] };
     try { await this.save(); }
     catch (error) { this.active = false; throw error; }
@@ -164,13 +167,23 @@ export class QuickMigration {
           }
           if (!path.isAbsolute(directory)) directory = plan.directory;
           if (directory === plan.directory && !input.directory) await mkdir(directory, { recursive: true });
-          const config = { binary: plan.target.binary, generation: plan.target.generation, directory, dataHome: input.dataHome || '', includeArchive: true, stateSnapshots: true };
-          if (!clients.has(directory)) clients.set(directory, await this.makeClient(config));
-          this.current.stage = `正在导入并核对第 ${index + 1} / ${files.length} 个对话`; await this.save();
-          const report = await this.store({ ...config, client: clients.get(directory) }).receive({ format: FORMAT, version: 1, exportedAt: new Date().toISOString(), sessions: [captured.session] }, { importNow: true });
-          this.current.jobs.push({ ...source, id: report.id, status: report.status, directory });
-          if (report.status !== 'imported') throw new Error(report.error || '原生回读验证未通过');
-          this.current.imported++; this.current.nativeSessions += report.sessions.length;
+          const failures = [];
+          for (const target of plan.targets ?? [plan.target]) {
+            try {
+              const config = { binary: target.binary, generation: target.generation, directory, dataHome: input.dataHome || '', includeArchive: true, stateSnapshots: true };
+              const key = target.generation + '\0' + target.binary + '\0' + directory;
+              if (!clients.has(key)) clients.set(key, await this.makeClient(config));
+              const client = clients.get(key);
+              if (client.generation !== target.generation || client.version !== target.version) throw new Error('版本已变化，请重新扫描');
+              this.current.stage = `正在写入 ${target.version} · 第 ${index + 1} / ${files.length} 个对话`; await this.save();
+              const report = await this.store({ ...config, client }).receive({ format: FORMAT, version: 1, exportedAt: new Date().toISOString(), sessions: [captured.session] }, { importNow: true });
+              this.current.jobs.push({ ...source, id: report.id, status: report.status, directory, generation: target.generation, version: target.version });
+              if (report.status !== 'imported') throw new Error(report.error || '原生回读验证未通过');
+              this.current.nativeSessions += report.sessions.length;
+            } catch (error) { failures.push(`${target.version}：${error.message}`); }
+          }
+          if (failures.length) throw new Error(failures.join('；'));
+          this.current.imported++;
         }
         seen.set(source.sourceID, identity);
       } catch (error) { this.current.errors.push({ file: item.file, error: error.message }); }

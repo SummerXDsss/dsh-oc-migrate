@@ -127,8 +127,11 @@ export class ConversationCatalog {
     const selected = ids.map(id => catalog.entries.find(e => e.id === id));
     if (selected.some(entry => !entry)) throw new Error('选择包含未知对话，请重新扫描');
     if (!catalog.plan.target) throw new Error('尚未找到 OpenCode，请先在迁移工作台检测');
-    const client = await this.quick.makeClient({ ...catalog.plan.target, directory: this.quick.home, dataHome: catalog.input.dataHome || '' });
-    if (client.generation !== catalog.plan.target.generation || client.version !== catalog.plan.target.version) throw new Error('OpenCode 版本已变化，请重新扫描');
+    const targets = catalog.direction === 'oc-to-dsh' ? [catalog.plan.target] : catalog.plan.targets ?? [catalog.plan.target];
+    for (const target of targets) {
+      const client = await this.quick.makeClient({ ...target, directory: this.quick.home, dataHome: catalog.input.dataHome || '' });
+      if (client.generation !== target.generation || client.version !== target.version) throw new Error(`${target.version} 版本已变化，请重新扫描`);
+    }
     this.requireScan(scanID);
     const plan = { ...catalog.plan, direction: catalog.direction, total: selected.length, errors: [], scanID,
       ...(catalog.direction === 'oc-to-dsh' ? { sessions: selected.map(e => ({ id: e.sourceID, expectedHash: e.fingerprint, expectedProject: e.projectFingerprint })) } : { files: selected.map(e => ({ ...e.source, expectedHash: e.fingerprint, expectedProject: e.projectFingerprint })) }) };
