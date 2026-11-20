@@ -20,6 +20,8 @@ npm run desktop:dev
 
 推送版本 tag 后，CI 并行回归与构建，全部成功才发布 macOS / Windows / Linux（DEB、RPM、AppImage）安装包和插件包。
 
+GitHub CI 额度不足时，可直接在本机打包：`npm run release:local`。自动完成本地检查、构建本机安装包、附带插件与 SHA-256 清单，输出到 `artifacts/releases/`，不调用 GitHub Actions。[本地构建说明](docs/LOCAL_RELEASE.md)。
+
 将 **DeepSeek Harness 的完整对话历史**经本地中间件迁移到 **OpenCode 1.x / 2.x**，供 CLI 和 GUI 查看、继续对话。
 
 这是独立社区项目，与 DeepSeek 或 OpenCode 官方没有隶属关系。
