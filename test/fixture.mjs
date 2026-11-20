@@ -5,7 +5,7 @@ export function fixture({ compact = false, id = 'dsh-example-中文' } = {}) {
   const message = (role, content, extra = {}) => ({ id: `dsh-message-${events.length}`, role, source: role === 'assistant' ? { kind: 'model', provider: 'deepseek', model: 'deepseek-chat' } : { kind: role === 'system' ? 'system-prompt' : 'user' }, content, ...extra });
   const event = (type, data, surfaceOp) => {
     const seq = events.length;
-    events.push({ seq, time: 1795132800000 + seq, type, data, ...(surfaceOp ? { surfaceOp } : {}) });
+    events.push({ seq, time: 1795132800000 + seq, type, data, ...(surfaceOp ? { surfaceOp: surfaceOp.op === 'append' ? 'append' : surfaceOp } : {}) });
   };
   event('turn/start', { turn: 1 });
   event('step/start', { turn: 1, step: 1 });

@@ -25,7 +25,7 @@ export function foldSurface(events) {
     }
     if (!SURFACE_TYPES.has(event.type)) fail(`非消息事件 seq=${event.seq} 含 surfaceOp`);
     const op = event.surfaceOp;
-    if (op.op === 'append') nodes.push(event.seq);
+    if (op === 'append' || op.op === 'append') nodes.push(event.seq);
     else if (op.op === 'replace') {
       const start = nodes.indexOf(op.startSeq), end = nodes.indexOf(op.endSeq);
       if (start < 0 || end < start) fail(`surface 替换范围无效：seq=${event.seq}`);
