@@ -42,6 +42,9 @@ async fn desktop_request(
         "importFile",
         "retry",
         "rollback",
+        "discoverQuick",
+        "startQuick",
+        "cancelQuick",
     ]
     .contains(&method.as_str())
     {

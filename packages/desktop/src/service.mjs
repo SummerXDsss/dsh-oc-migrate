@@ -7,14 +7,16 @@ import { pathToFileURL } from 'node:url';
 import { MigrationStore, atomicJSON } from '../../middleware/src/store.mjs';
 import { createReceiver } from '../../middleware/src/server.mjs';
 import { createCliClient, createHttpClient } from '../../opencode-client/src/index.mjs';
+import { QuickMigration, binaryCandidates } from './quick.mjs';
 
 const MAX_FILE = 64 * 1024 * 1024;
 export class DesktopService {
-  constructor({ root, pluginFile, emit = () => {}, makeClient = createCliClient }) {
+  constructor({ root, pluginFile, emit = () => {}, makeClient = createCliClient, home = os.homedir(), candidates }) {
     this.root = path.resolve(root); this.pluginFile = pluginFile;
     this.emit = emit; this.makeClient = makeClient;
     this.server = null; this.target = null; this.receiver = null;
     this.jobs = new MigrationStore({ state: path.join(this.root, 'jobs') });
+    this.quick = new QuickMigration({ root: this.root, home, candidates, makeClient, store: target => this.observedStore(target), emit });
   }
   async init() {
     await mkdir(this.root, { recursive: true, mode: 0o700 });
@@ -25,17 +27,16 @@ export class DesktopService {
     this.token = (await readFile(this.tokenFile, 'utf8')).trim();
     try { this.settings = JSON.parse(await readFile(path.join(this.root, 'settings.json'), 'utf8')); }
     catch (error) { if (error.code !== 'ENOENT') throw error; this.settings = {}; }
+    await this.quick.init();
     return this;
   }
   async snapshot() {
     return { settings: this.settings, receiver: this.receiver, jobs: await this.jobs.list(),
-      stateDirectory: this.root, tokenFile: this.tokenFile, pluginFile: this.pluginFile ?? null };
+      stateDirectory: this.root, tokenFile: this.tokenFile, pluginFile: this.pluginFile ?? null, quick: this.quick.current };
   }
   async detect() {
     const home = os.homedir();
-    const names = process.platform === 'win32'
-      ? [path.join(home, '.opencode/bin/opencode.exe'), 'opencode.exe']
-      : [path.join(home, '.opencode/bin/opencode'), '/Applications/OpenCode.app/Contents/Resources/opencode-cli', '/opt/homebrew/bin/opencode', '/usr/local/bin/opencode', 'opencode'];
+    const names = binaryCandidates(home);
     const candidates = [];
     for (const binary of names) {
       try {
@@ -117,7 +118,13 @@ export class DesktopService {
     finally { this.emit({ type: 'jobs-changed', id }); }
   }
   async request(method, payload = {}) {
+    if (this.quick.active && !['snapshot', 'discoverQuick', 'cancelQuick'].includes(method)) throw new Error('请等待一键迁移完成，或先停止迁移');
     switch (method) {
+      case 'discoverQuick': return this.quick.discover(payload);
+      case 'startQuick':
+        if (this.server) throw new Error('请先停止高级接收端，再开始一键迁移');
+        return this.quick.start(payload);
+      case 'cancelQuick': return this.quick.cancel();
       case 'snapshot': return this.snapshot();
       case 'detect': return this.detect();
       case 'connect': return this.connect(payload);
