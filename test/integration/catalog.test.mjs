@@ -40,7 +40,7 @@ for (const [generation, binary] of [['v1', process.env.OPENCODE_V1_BIN], ['v2', 
       const projectClient=await makeClient({directory:source.header.cwd});await projectClient.import(file,converted.transcript);
     }
     const nativeProjects=await client.listProjects();assert(Array.isArray(nativeProjects));
-    for(const source of sources){const actual=await client.export((await client.listAll()).find(info=>info.directory===source.header.cwd || info.location?.directory===source.header.cwd)?.id || (await client.listAll())[0].id);assert(nativeProjects.some(project=>project.id===actual.info.projectID));}
+    for(const info of await client.listAll()){const actual=await client.export(info.id);assert(nativeProjects.some(project=>project.id===actual.info.projectID));}
     const target=path.join(root,'reverse-target');catalog=await app.request('scanCatalog',{direction:'oc-to-dsh',dshRoot:target});assert.equal(catalog.entries.length,3);assert.equal(catalog.projects.length,2);
     const selected=catalog.entries[1];assert.match(JSON.stringify(await app.request('catalogPreview',{scanID:catalog.id,id:selected.id})),/原始文件内容/);
     await app.request('startSelected',{scanID:catalog.id,ids:[selected.id]});await app.quick.done;
