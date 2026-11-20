@@ -1,9 +1,13 @@
 # dsh-oc-migrate
 
 
+## 一键桌面版
+
+从 [Releases](https://github.com/SummerXDsss/dsh-oc-migrate/releases/latest) 下载对应系统安装包，打开后点击「一键迁移全部对话」。自动发现本机 DSH 与 OpenCode，原件先备份、逐对话回读验证；无需安装插件或填写端口、令牌。原有插件与 CLI 工作链保留在高级流程。[桌面使用说明](docs/DESKTOP.md)。
+
 ## 桌面应用（Tauri 2）
 
-中文 GUI 现已成为主要入口：选择 OpenCode → 启动本地接收 → DSH 导出全部对话 → 原生回读验证。内置中间件与运行时，保留原有 DSH 插件和 CLI。
+中文 GUI 是主要入口：自动发现 → 一键迁移全部对话 → 原生回读验证。内置中间件与运行时；插件接收、手动连接和 CLI 保留为高级方式。
 
 [下载桌面版](https://github.com/SummerXDsss/dsh-oc-migrate/releases/latest) · [桌面使用与开发](docs/DESKTOP.md)
 
@@ -12,7 +16,7 @@ npm ci
 npm run desktop:dev
 ```
 
-推送版本 tag 后，CI 回归通过才构建并发布 macOS / Windows / Linux 安装包和插件包。
+推送版本 tag 后，CI 并行回归与构建，全部成功才发布 macOS / Windows / Linux 安装包和插件包。
 
 将 **DeepSeek Harness 的完整对话历史**经本地中间件迁移到 **OpenCode 1.x / 2.x**，供 CLI 和 GUI 查看、继续对话。
 
@@ -81,7 +85,7 @@ HTTP 适配器使用 OpenCode 2.x 原生 `/api/experimental/session/import`，�
 
 ## 3. DSH 插件
 
-将 `npm pack` 生成的 `dsh-oc-migrate-0.2.0.tgz` 安装进 DSH 对应 profile，或在该 profile 中安装本仓库。参考配置如下（完整步骤见 [插件配置](docs/PLUGIN.md)）：
+将 `npm pack` 生成的 `dsh-oc-migrate-0.3.0.tgz` 安装进 DSH 对应 profile，或在该 profile 中安装本仓库。参考配置如下（完整步骤见 [插件配置](docs/PLUGIN.md)）：
 
 ```yaml
 - id: dsh-oc-migrate

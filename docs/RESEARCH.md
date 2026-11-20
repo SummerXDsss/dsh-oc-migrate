@@ -112,3 +112,13 @@ GUI 是客户端，不需要另外发明一套聊天存储。GUI 和 CLI 使用�
 ## 8. 后续工作
 
 真实 DSH 导出样本与 profile 验收、多媒体附件二进制打包、更多 1.x/2.x 小版本回归、GUI 端到端展示、超大日志流式接收。按迁移单回滚已实现并经过真实双版本验收；回滚不会删除正文已变化的会话。
+
+## 9. v0.3 一键本地迁移
+
+为免去插件安装与连接配置，新增只读磁盘导出适配器，与 Host 插件共处源端层，复用中间件与原生客户端。原工作链继续用于远程 Host 和内存中尚未持久化的截面。
+
+- [JSONL 文件布局与物理头](https://github.com/deepseek-ai/deepseek-harness/blob/2e39e70496aa02986ca6a820c5d497e816b69d7e/packages/session/session-persistence-jsonl/src/format.ts)：每个项目 / 会话目录中的 `session.v4.jsonl` 或 `.jsonl.zstd`；只读最高版本，遇到不支持的新格式不偷偷读取陈旧副本。
+- [Zstandard 追加帧](https://github.com/deepseek-ai/deepseek-harness/blob/2e39e70496aa02986ca6a820c5d497e816b69d7e/packages/session/session-persistence-jsonl/src/zstd.ts)：必须逐帧解码。部分运行时直接解压整个文件只返回第一个帧，可能只读到会话头；本项目以多帧回归防止漏读。
+- [v4 物理编码](https://github.com/deepseek-ai/deepseek-harness/blob/2e39e70496aa02986ca6a820c5d497e816b69d7e/packages/session/session-format-v3-to-v4/src/codec.ts) 与 [Session 类型](https://github.com/deepseek-ai/deepseek-harness/blob/2e39e70496aa02986ca6a820c5d497e816b69d7e/packages/core/session/src/types.ts)：原生 surface append 是字符串 `'append'`，替换是对象；继承边界取带 `inherited: true` 的 `session/end-seed` 事件位置。
+- 读取前后比较文件大小、mtime、ctime；遇到正在写入或不完整尾巴逐项报告，既不修复也不截断 DSH 源文件。原始物理字节先备份，并记录 SHA-256。
+- 本机只读检查：70 个对话、126,894 条事件全部可读取并经 1.x / 2.x 转换，未写入真实 OpenCode 历史，也未把正文输出到验收日志。原生导入使用隔离的合成物理日志另行验证。
