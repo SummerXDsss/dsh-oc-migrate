@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, writeFile, readFile, readdir, rm, utimes } from 'node:f
 import path from 'node:path';
 import os from 'node:os';
 import { createHash } from 'node:crypto';
-import { localReleasePlan, collectLocalInstallers, writeChecksums } from '../scripts/local-release.mjs';
+import { localReleasePlan, collectLocalInstallers, writeChecksums, verifySourceIdentity } from '../scripts/local-release.mjs';
 
 test('本地构建只选择当前原生平台，不伪造四平台 Release', () => {
   assert.equal(localReleasePlan('darwin', 'arm64').bundles, 'app,dmg');
@@ -47,4 +47,21 @@ test('本地校验清单可重复生成，包含真实文件哈希但不包含�
   await writeChecksums(root);
   assert.equal(await readFile(path.join(root, 'SHA256SUMS.txt'), 'utf8'), expected);
   assert.equal((await readdir(root)).length, 3);
+});
+
+test('Linux 本地归集识别 Tauri RPM 的连字符命名，排除不同版本', async t => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'dsh-local-rpm-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const input = path.join(root, 'in'), output = path.join(root, 'out');
+  await mkdir(input);
+  const names = ['DSH_0.5.8_amd64.deb', 'DSH_0.5.8_amd64.AppImage', 'DSH OpenCode Migrate-0.5.8-1.x86_64.rpm'];
+  for (const name of names) await writeFile(path.join(input, name), 'fixture');
+  await writeFile(path.join(input, 'DSH OpenCode Migrate-0.5.8-beta-1.x86_64.rpm'), 'wrong prerelease');
+  assert.equal((await collectLocalInstallers(input, output, localReleasePlan('linux', 'x64'), '0.5.8')).length, 3);
+});
+
+test('构建期间提交或工作区变化时阻止写入成功清单', () => {
+  assert.doesNotThrow(() => verifySourceIdentity('commit-a', 'commit-a', ''));
+  assert.throws(() => verifySourceIdentity('commit-a', 'commit-b', ''), /源码已变化/);
+  assert.throws(() => verifySourceIdentity('commit-a', 'commit-a', ' M package.json'), /源码已变化/);
 });

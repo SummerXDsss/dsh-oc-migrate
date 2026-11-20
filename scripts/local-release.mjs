@@ -16,6 +16,10 @@ export function localReleasePlan(platform = process.platform, arch = process.arc
   return plan;
 }
 
+export function verifySourceIdentity(expected, current, status) {
+  if (expected !== current || status.trim()) throw new Error('构建期间源码已变化，请提交改动后重新构建；本次不生成成功清单');
+}
+
 export async function collectLocalInstallers(input, output, plan, version, since = 0) {
   const files = [];
   async function walk(dir) {
@@ -32,7 +36,11 @@ export async function collectLocalInstallers(input, output, plan, version, since
     const candidates = [];
     for (const file of files.filter(file => path.extname(file) === extension)) {
       // Never substitute an old version or stale cached installer for this build.
-      if (path.basename(file).split('_').includes(version) && (await stat(file)).mtimeMs >= since) candidates.push(file);
+      const name = path.basename(file);
+      // Tauri RPM uses product-version-release.arch.rpm, unlike the underscore formats.
+      const rpmStem = name.replace(/-[^-]+\.[^.]+\.rpm$/, '');
+      const matchingVersion = extension === '.rpm' ? rpmStem !== name && rpmStem.endsWith(`-${version}`) : name.split('_').includes(version);
+      if (matchingVersion && (await stat(file)).mtimeMs >= since) candidates.push(file);
     }
     if (candidates.length !== 1) throw new Error(`需要本次构建的 ${version} ${extension} 安装包，实际找到 ${candidates.length} 份`);
     selected.push(candidates[0]);
@@ -101,6 +109,8 @@ async function main() {
     env.DSH_NATIVE_APP_ROOT = root;
     npm(['run', 'test:integration']);
   }
+  const verifySource = () => verifySourceIdentity(commit, capture('git', ['rev-parse', 'HEAD']), capture('git', ['status', '--porcelain']));
+  verifySource();
   const releases = path.join(root, 'artifacts/releases');
   await mkdir(releases, { recursive: true });
   const staging = await mkdtemp(path.join(releases, '.local-build-'));
@@ -115,6 +125,7 @@ async function main() {
     }
     await copyFile('src-tauri/resources/dsh-oc-migrate-plugin.tgz', path.join(staging, `dsh-oc-migrate-${version}.tgz`));
     if (process.platform === 'linux') await copyFile('scripts/start-linux.sh', path.join(staging, 'start-linux.sh'));
+    verifySource();
     await writeFile(path.join(staging, 'BUILD-MANIFEST.json'), JSON.stringify({ version, commit, sourceDirty: false, platform: plan.name, rustHost: host, builtAt: new Date().toISOString(), githubActionsUsed: false, nativeRegression: nativeBins.every(Boolean) ? 'passed' : 'not run (provide both OPENCODE_V1_BIN and OPENCODE_V2_BIN)', signing: process.platform === 'darwin' ? 'app ad-hoc; no Apple notarization claimed' : 'no installer signing claimed', steps }, null, 2) + '\n');
     await writeChecksums(staging);
     const destination = path.join(releases, `v${version}-${plan.name}-${new Date().toISOString().replace(/[:.]/g, '-')}`);
